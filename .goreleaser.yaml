@@ -1,0 +1,50 @@
+# GoReleaser config for gh-skills.
+#
+# gh's extension manager downloads precompiled binaries named
+# `gh-EXTNAME-OS-ARCH[.exe]` directly from a release. We disable archives so
+# the raw binaries are uploaded with the names gh expects.
+
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: gh-skills
+    binary: gh-skills-{{ .Os }}-{{ .Arch }}
+    main: ./
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
+    no_unique_dist_dir: true
+
+archives:
+  - id: gh-skills-binaries
+    formats: [binary]
+    name_template: "gh-skills-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch

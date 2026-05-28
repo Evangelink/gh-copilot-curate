@@ -1,0 +1,23 @@
+# Binaries
+gh-skills
+gh-skills.exe
+dist/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Local caches
+.skills/cache/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+*.out
+coverage.html
