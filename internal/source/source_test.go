@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -85,7 +86,12 @@ func TestExtractTarGzRejectsSymlink(t *testing.T) {
 
 func TestExtractTarGzRejectsDriveLetter(t *testing.T) {
 	// Defends against Windows drive-qualified entries like "C:/evil" that
-	// slip past the leading-"/" check.
+	// slip past the leading-"/" check. On non-Windows hosts, "C:" is a
+	// valid filename component (no volume semantics), so the threat model
+	// only applies to Windows and the test is skipped elsewhere.
+	if runtime.GOOS != "windows" {
+		t.Skip("drive-letter entries only have volume semantics on Windows")
+	}
 	tmp := t.TempDir()
 	tgz := makeTarGz(t, []tarEntry{{name: "C:/evil.txt", body: []byte("bad")}})
 	if err := ExtractTarGz(bytes.NewReader(tgz), tmp); err == nil {

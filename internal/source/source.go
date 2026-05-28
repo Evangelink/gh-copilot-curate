@@ -252,7 +252,7 @@ func ExtractTarGz(r io.Reader, dest string) error {
 			if err := os.MkdirAll(target, 0o755); err != nil {
 				return err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			fileCount++
 			if fileCount > maxTarFiles {
 				return fmt.Errorf("tarball exceeds %d files (refusing for safety)", maxTarFiles)
