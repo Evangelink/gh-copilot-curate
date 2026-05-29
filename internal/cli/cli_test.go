@@ -23,14 +23,14 @@ func TestInitCreatesSkillsScaffold(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("init: %v\n%s", err, out.String())
 	}
-	if _, err := os.Stat(filepath.Join(root, ".skills", "manifest.yml")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".agent-pack", "manifest.yml")); err != nil {
 		t.Errorf("manifest not created: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "BEGIN gh-skill-pack managed") {
+	if !strings.Contains(string(body), "BEGIN gh-agent-pack managed") {
 		t.Errorf("missing managed block:\n%s", body)
 	}
 }
@@ -41,10 +41,10 @@ func TestInitIsNonDestructive(t *testing.T) {
 		t.Fatal(err)
 	}
 	pre := []byte("# my manifest\nplugins: []\n")
-	if err := os.MkdirAll(filepath.Join(root, ".skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-pack"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".skills", "manifest.yml"), pre, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-pack", "manifest.yml"), pre, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := NewRootCmd("test")
@@ -54,7 +54,7 @@ func TestInitIsNonDestructive(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := os.ReadFile(filepath.Join(root, ".skills", "manifest.yml"))
+	got, _ := os.ReadFile(filepath.Join(root, ".agent-pack", "manifest.yml"))
 	if !bytes.Equal(got, pre) {
 		t.Errorf("manifest was rewritten:\n%s", got)
 	}

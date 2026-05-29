@@ -9,15 +9,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Evangelink/gh-skill-pack/internal/repo"
-	"github.com/Evangelink/gh-skill-pack/internal/skills"
+	"github.com/Evangelink/gh-agent-pack/internal/repo"
+	"github.com/Evangelink/gh-agent-pack/internal/skills"
 )
 
 // NewRootCmd returns the root cobra command, with all subcommands wired in.
 func NewRootCmd(version string) *cobra.Command {
 	skills.ToolVersion = version
 	cmd := &cobra.Command{
-		Use:           "gh-skill-pack",
+		Use:           "gh-agent-pack",
 		Short:         "Install and update Copilot/Claude/Cursor skills and agents in a repo",
 		Long:          rootLong,
 		Version:       version,
@@ -35,20 +35,20 @@ func NewRootCmd(version string) *cobra.Command {
 	return cmd
 }
 
-const rootLong = `gh-skill-pack installs and updates AI agent skills/plugins from a source
+const rootLong = `gh-agent-pack installs and updates AI agent skills/plugins from a source
 repository (e.g. dotnet/skills) into the current repo.
 
-Files are committed under .skills/, and AGENTS.md plus
+Files are committed under .agent-pack/, and AGENTS.md plus
 .github/copilot-instructions.md are updated with a managed block so the
 GitHub.com Copilot cloud agent and every contributor pick them up
 automatically.
 
 Common workflows:
-  gh skill-pack init
-  gh skill-pack add dotnet/skills@v1.0.0
-  gh skill-pack list
-  gh skill-pack update
-  gh skill-pack verify
+  gh agent-pack init
+  gh agent-pack add dotnet/skills@v1.0.0
+  gh agent-pack list
+  gh agent-pack update
+  gh agent-pack verify
 `
 
 // rootFlag adds a --root flag for explicit repo-root selection.

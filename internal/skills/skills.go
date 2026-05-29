@@ -7,9 +7,9 @@
 //
 // TODO(v1.1): Add/Update perform per-file writes interleaved with manifest
 // and lock updates. A failure partway through can leave orphaned files
-// under .skills/plugins/<id>/ without a corresponding lock entry. We
+// under .agent-pack/plugins/<id>/ without a corresponding lock entry. We
 // considered staging into a temp tree and committing atomically; for v1 the
-// recovery path is "re-run `gh skill-pack add` / `gh skill-pack update` to reach a
+// recovery path is "re-run `gh agent-pack add` / `gh agent-pack update` to reach a
 // consistent state, or delete the orphaned directory by hand". Track in
 // roadmap when we hit a real-world incident.
 package skills
@@ -29,11 +29,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Evangelink/gh-skill-pack/internal/agents"
-	"github.com/Evangelink/gh-skill-pack/internal/layout"
-	"github.com/Evangelink/gh-skill-pack/internal/manifest"
-	"github.com/Evangelink/gh-skill-pack/internal/repo"
-	"github.com/Evangelink/gh-skill-pack/internal/source"
+	"github.com/Evangelink/gh-agent-pack/internal/agents"
+	"github.com/Evangelink/gh-agent-pack/internal/layout"
+	"github.com/Evangelink/gh-agent-pack/internal/manifest"
+	"github.com/Evangelink/gh-agent-pack/internal/repo"
+	"github.com/Evangelink/gh-agent-pack/internal/source"
 )
 
 // ToolVersion is overridden at link time by GoReleaser.
@@ -97,7 +97,7 @@ func (ops *Operations) Add(ctx context.Context, opts AddOptions) (*AddResult, er
 		return nil, fmt.Errorf("resolve ref: %w", err)
 	}
 
-	tmp, err := os.MkdirTemp("", "gh-skill-pack-fetch-")
+	tmp, err := os.MkdirTemp("", "gh-agent-pack-fetch-")
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +150,8 @@ func (ops *Operations) Add(ctx context.Context, opts AddOptions) (*AddResult, er
 		return res, nil
 	}
 
-	if err := EnsureSkillsGitAttributes(opts.RepoRoot); err != nil {
-		return res, fmt.Errorf("write .skills/.gitattributes: %w", err)
+	if err := EnsurePackGitAttributes(opts.RepoRoot); err != nil {
+		return res, fmt.Errorf("write .agent-pack/.gitattributes: %w", err)
 	}
 	if err := manifest.SaveManifest(opts.RepoRoot, mf); err != nil {
 		return res, fmt.Errorf("save manifest: %w", err)
@@ -320,7 +320,7 @@ func (ops *Operations) Remove(opts RemoveOptions) (*RemoveResult, error) {
 			return res, err
 		}
 	}
-	pruneEmptyDirs(filepath.Join(opts.RepoRoot, manifest.SkillsDir, "plugins", opts.PluginName))
+	pruneEmptyDirs(filepath.Join(opts.RepoRoot, manifest.PackDir, "plugins", opts.PluginName))
 
 	mf.Remove(opts.PluginName)
 	lock.Remove(opts.PluginName)
@@ -634,15 +634,15 @@ func safeLockPath(repoRoot, lockRel string) string {
 	return filepath.Join(repoRoot, filepath.FromSlash(lockRel))
 }
 
-// EnsureSkillsGitAttributes writes .skills/.gitattributes with
-// `* text eol=lf` so files under .skills/ keep stable byte content across
+// EnsurePackGitAttributes writes .agent-pack/.gitattributes with
+// `* text eol=lf` so files under .agent-pack/ keep stable byte content across
 // clones with core.autocrlf enabled. Without this, localHash comparison in
 // verify produces spurious drift after a Windows checkout. Idempotent: the
 // file is only written if absent or its content differs.
-func EnsureSkillsGitAttributes(repoRoot string) error {
-	rel := filepath.Join(manifest.SkillsDir, ".gitattributes")
+func EnsurePackGitAttributes(repoRoot string) error {
+	rel := filepath.Join(manifest.PackDir, ".gitattributes")
 	full := filepath.Join(repoRoot, rel)
-	want := []byte("# managed by gh-skill-pack: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
+	want := []byte("# managed by gh-agent-pack: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
 	existing, err := os.ReadFile(full)
 	if err == nil && bytes.Equal(existing, want) {
 		return nil

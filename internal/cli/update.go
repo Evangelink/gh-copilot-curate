@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Evangelink/gh-skill-pack/internal/skills"
+	"github.com/Evangelink/gh-agent-pack/internal/skills"
 )
 
 func newUpdateCmd() *cobra.Command {

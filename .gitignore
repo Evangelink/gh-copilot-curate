@@ -1,6 +1,6 @@
 # Binaries
-gh-skill-pack
-gh-skill-pack.exe
+gh-agent-pack
+gh-agent-pack.exe
 dist/
 
 # Go workspace
@@ -8,7 +8,7 @@ go.work
 go.work.sum
 
 # Local caches
-.skills/cache/
+.agent-pack/cache/
 
 # Editor
 .vscode/

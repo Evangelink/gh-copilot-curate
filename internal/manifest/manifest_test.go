@@ -81,8 +81,8 @@ func TestLockRoundTripAndOrdering(t *testing.T) {
 				Layout:       "dotnet-skills",
 				Install:      InstallConfig{Mode: ModeSummary},
 				Files: []LockFile{
-					{Path: ".skills/plugins/z-plugin/skills/b/SKILL.md", UpstreamPath: "plugins/z-plugin/skills/b/SKILL.md", UpstreamHash: "sha256:b", LocalHash: "sha256:b", Mode: "0644"},
-					{Path: ".skills/plugins/z-plugin/skills/a/SKILL.md", UpstreamPath: "plugins/z-plugin/skills/a/SKILL.md", UpstreamHash: "sha256:a", LocalHash: "sha256:a", Mode: "0644"},
+					{Path: ".agent-pack/plugins/z-plugin/skills/b/SKILL.md", UpstreamPath: "plugins/z-plugin/skills/b/SKILL.md", UpstreamHash: "sha256:b", LocalHash: "sha256:b", Mode: "0644"},
+					{Path: ".agent-pack/plugins/z-plugin/skills/a/SKILL.md", UpstreamPath: "plugins/z-plugin/skills/a/SKILL.md", UpstreamHash: "sha256:a", LocalHash: "sha256:a", Mode: "0644"},
 				},
 			},
 			{ID: "a-plugin", Source: LockSource{Type: "github", Host: "github.com", Owner: "o", Repo: "r"}, ResolvedRef: "x", Layout: "dotnet-skills", Install: InstallConfig{Mode: ModeSummary}},

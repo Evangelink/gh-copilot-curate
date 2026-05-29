@@ -61,9 +61,9 @@ func TestTranslateDotnetSkillsCopiesWholeSubtree(t *testing.T) {
 	}
 	got := canonicalSet(plugins[0].Files)
 	want := []string{
-		".skills/plugins/dotnet-msbuild/agents/msbuild.agent.md",
-		".skills/plugins/dotnet-msbuild/skills/build-perf/SKILL.md",
-		".skills/plugins/dotnet-msbuild/skills/build-perf/scripts/run.ps1",
+		".agent-pack/plugins/dotnet-msbuild/agents/msbuild.agent.md",
+		".agent-pack/plugins/dotnet-msbuild/skills/build-perf/SKILL.md",
+		".agent-pack/plugins/dotnet-msbuild/skills/build-perf/scripts/run.ps1",
 	}
 	if !equalSorted(got, want) {
 		t.Errorf("files: got %v want %v", got, want)
@@ -102,7 +102,7 @@ func TestTranslateDotnetSkillsIncludes(t *testing.T) {
 		t.Fatalf("got %+v", plugins)
 	}
 	got := canonicalSet(plugins[0].Files)
-	want := []string{".skills/plugins/p/skills/keep/SKILL.md"}
+	want := []string{".agent-pack/plugins/p/skills/keep/SKILL.md"}
 	if !equalSorted(got, want) {
 		t.Errorf("files: got %v want %v", got, want)
 	}
