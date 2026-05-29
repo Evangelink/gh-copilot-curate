@@ -30,7 +30,7 @@ func TestInitCreatesSkillsScaffold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "BEGIN gh-skills managed") {
+	if !strings.Contains(string(body), "BEGIN gh-skill-pack managed") {
 		t.Errorf("missing managed block:\n%s", body)
 	}
 }

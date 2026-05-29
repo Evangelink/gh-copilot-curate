@@ -1,4 +1,4 @@
-// Command gh-skills is a GitHub CLI extension that installs and updates
+// Command gh-skill-pack is a GitHub CLI extension that installs and updates
 // Copilot/Claude/Cursor skills and agents from a source repository into a
 // target repository (committed) or the user's home directory.
 package main
@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Evangelink/gh-skills/internal/cli"
+	"github.com/Evangelink/gh-skill-pack/internal/cli"
 )
 
 // version is the build version. Overridden by GoReleaser via -ldflags.

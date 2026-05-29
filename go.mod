@@ -1,4 +1,4 @@
-module github.com/Evangelink/gh-skills
+module github.com/Evangelink/gh-skill-pack
 
 go 1.23
 
