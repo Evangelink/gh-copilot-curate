@@ -16,7 +16,7 @@
 
 | You want to… | Use |
 |---|---|
-| Install one or two SKILL.md skills onto your local machine | **Built-in [`gh skill`](https://cli.github.com/manual/gh_skill) (GitHub CLI 2.92+).** Official, supports per-agent dirs, has search and a public catalogue. |
+| Install one or two SKILL.md skills onto your local machine | **Built-in [`gh skill`](https://cli.github.com/manual/gh_skill) (GitHub CLI 2.92+, ⚠ preview).** Official, supports per-agent dirs, has search and a public catalogue. |
 | Commit a SKILL.md skill into your repo so every contributor and `@copilot` see it | Either tool works. `gh-agent-pack` adds the AGENTS.md managed block and a manifest. |
 | Install a whole *plugin bundle* (skills + agents + scripts) from a repo like [`dotnet/skills`](https://github.com/dotnet/skills) | **`gh-agent-pack`.** The built-in installs one SKILL.md at a time and ignores `.agent.md` files. |
 | Install / update `.agent.md` sub-agent definitions | **`gh-agent-pack`.** The built-in has no concept of agents. |
@@ -25,6 +25,11 @@
 `gh-agent-pack` complements `gh skill` — it does not replace it for
 single-skill installs. The two can coexist in the same repo (different
 on-disk dirs: `.agent-pack/` vs `.agents/skills/`).
+
+> ⚠ **`gh skill` is officially in preview.** Every subcommand is
+> labelled `(preview)` and its help text states it is "subject to
+> change without notice." Pin a `gh` CLI version if you wire it into
+> CI.
 
 ## Why this exists
 
@@ -236,7 +241,7 @@ applied.
 
 ## Comparison with related tooling
 
-| | `/plugin install` | `gh skill install` (built-in 2.92+) | `gh agent-pack add` |
+| | `/plugin install` | `gh skill install` (built-in 2.92+, ⚠ preview) | `gh agent-pack add` |
 |---|---|---|---|
 | Default scope | User machine | User machine (`--scope=project` commits to repo) | Repository (always commits) |
 | Surfaces in AGENTS.md for the cloud agent | ❌ | ❌ | ✅ |
