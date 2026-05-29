@@ -1,4 +1,4 @@
-# GoReleaser config for gh-skill-pack.
+# GoReleaser config for gh-agent-pack.
 #
 # gh's extension manager downloads precompiled binaries named
 # `gh-EXTNAME-OS-ARCH[.exe]` directly from a release. We disable archives so
@@ -11,8 +11,8 @@ before:
     - go mod tidy
 
 builds:
-  - id: gh-skill-pack
-    binary: gh-skill-pack-{{ .Os }}-{{ .Arch }}
+  - id: gh-agent-pack
+    binary: gh-agent-pack-{{ .Os }}-{{ .Arch }}
     main: ./
     env:
       - CGO_ENABLED=0
@@ -28,9 +28,9 @@ builds:
     no_unique_dist_dir: true
 
 archives:
-  - id: gh-skill-pack-binaries
+  - id: gh-agent-pack-binaries
     formats: [binary]
-    name_template: "gh-skill-pack-{{ .Os }}-{{ .Arch }}"
+    name_template: "gh-agent-pack-{{ .Os }}-{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"

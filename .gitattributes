@@ -1,2 +1,2 @@
 # Mark generated artifacts so GitHub treats them appropriately in diffs and language stats.
-.skills/manifest.lock.yml linguist-generated=true
+.agent-pack/manifest.lock.yml linguist-generated=true

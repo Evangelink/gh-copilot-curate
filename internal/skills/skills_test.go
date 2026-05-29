@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Evangelink/gh-skill-pack/internal/manifest"
-	"github.com/Evangelink/gh-skill-pack/internal/source"
+	"github.com/Evangelink/gh-agent-pack/internal/manifest"
+	"github.com/Evangelink/gh-agent-pack/internal/source"
 )
 
 // stubFetcher serves a fixed tarball + sha for tests; no network.
@@ -44,7 +44,7 @@ func TestAddInstallsDotnetSkillsPlugin(t *testing.T) {
 	}
 
 	// Files written
-	skill := filepath.Join(repoRoot, ".skills", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
+	skill := filepath.Join(repoRoot, ".agent-pack", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
 	body, err := os.ReadFile(skill)
 	if err != nil {
 		t.Fatalf("expected SKILL.md to be written: %v", err)
@@ -71,7 +71,7 @@ func TestAddInstallsDotnetSkillsPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(agentsMd), "BEGIN gh-skill-pack managed") {
+	if !strings.Contains(string(agentsMd), "BEGIN gh-agent-pack managed") {
 		t.Errorf("AGENTS.md missing managed block:\n%s", agentsMd)
 	}
 	if !strings.Contains(string(agentsMd), "Build perf") {
@@ -111,7 +111,7 @@ func TestVerifyDetectsDrift(t *testing.T) {
 		t.Fatalf("expected clean verify, got %+v", res)
 	}
 	// Modify a file → drift expected.
-	skill := filepath.Join(repoRoot, ".skills", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
+	skill := filepath.Join(repoRoot, ".agent-pack", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
 	if err := os.WriteFile(skill, []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestRemoveRefusesOnDrift(t *testing.T) {
 	if _, err := ops.Add(context.Background(), AddOptions{RepoRoot: repoRoot, Spec: spec}); err != nil {
 		t.Fatal(err)
 	}
-	skill := filepath.Join(repoRoot, ".skills", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
+	skill := filepath.Join(repoRoot, ".agent-pack", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
 	if err := os.WriteFile(skill, []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -6,22 +6,22 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Evangelink/gh-skill-pack/internal/agents"
-	"github.com/Evangelink/gh-skill-pack/internal/manifest"
-	"github.com/Evangelink/gh-skill-pack/internal/skills"
+	"github.com/Evangelink/gh-agent-pack/internal/agents"
+	"github.com/Evangelink/gh-agent-pack/internal/manifest"
+	"github.com/Evangelink/gh-agent-pack/internal/skills"
 )
 
 func newInitCmd() *cobra.Command {
 	var rootDir string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create .skills/ scaffolding and AGENTS.md managed block (non-destructive)",
+		Short: "Create .agent-pack/ scaffolding and AGENTS.md managed block (non-destructive)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			root, err := resolveRoot(rootDir, true)
 			if err != nil {
 				return err
 			}
-			if err := os.MkdirAll(filepath.Join(root, manifest.SkillsDir, "plugins"), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Join(root, manifest.PackDir, "plugins"), 0o755); err != nil {
 				return err
 			}
 			// Non-destructive: only write manifest if absent.
@@ -34,9 +34,9 @@ func newInitCmd() *cobra.Command {
 			} else {
 				fprintln(cmd.OutOrStdout(), manifest.ManifestPath, "already exists, leaving untouched")
 			}
-			// Write .skills/.gitattributes so localHash stays stable across
+			// Write .agent-pack/.gitattributes so localHash stays stable across
 			// CRLF/LF checkouts. Idempotent.
-			if err := skills.EnsureSkillsGitAttributes(root); err != nil {
+			if err := skills.EnsurePackGitAttributes(root); err != nil {
 				return err
 			}
 			// Bootstrap AGENTS.md managed block (empty) so contributors see the
@@ -46,7 +46,7 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 			fprintln(cmd.OutOrStdout(), "managed block ready in", agents.AgentsFile)
-			fprintln(cmd.OutOrStdout(), "\nNext: gh skill-pack add <owner/repo>[@ref]")
+			fprintln(cmd.OutOrStdout(), "\nNext: gh agent-pack add <owner/repo>[@ref]")
 			return nil
 		},
 	}
