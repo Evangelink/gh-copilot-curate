@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Evangelink/gh-skills/internal/manifest"
-	"github.com/Evangelink/gh-skills/internal/source"
+	"github.com/Evangelink/gh-skill-pack/internal/manifest"
+	"github.com/Evangelink/gh-skill-pack/internal/source"
 )
 
 // stubFetcher serves a fixed tarball + sha for tests; no network.
@@ -71,7 +71,7 @@ func TestAddInstallsDotnetSkillsPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(agentsMd), "BEGIN gh-skills managed") {
+	if !strings.Contains(string(agentsMd), "BEGIN gh-skill-pack managed") {
 		t.Errorf("AGENTS.md missing managed block:\n%s", agentsMd)
 	}
 	if !strings.Contains(string(agentsMd), "Build perf") {

@@ -1,5 +1,5 @@
 // Package layout translates an upstream source tree into the canonical
-// gh-skills on-disk format under .skills/plugins/<plugin>/...
+// gh-skill-pack on-disk format under .skills/plugins/<plugin>/...
 //
 // v1 supports two layouts:
 //
@@ -35,7 +35,7 @@ const (
 	KindHeuristic    Kind = "heuristic"
 )
 
-// Plugin is a logical bundle of skills+agents+scripts that gh-skills installs
+// Plugin is a logical bundle of skills+agents+scripts that gh-skill-pack installs
 // as a unit under .skills/plugins/<Name>/.
 type Plugin struct {
 	Name  string  // canonical plugin id (kebab-case)

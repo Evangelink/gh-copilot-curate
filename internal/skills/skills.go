@@ -9,7 +9,7 @@
 // and lock updates. A failure partway through can leave orphaned files
 // under .skills/plugins/<id>/ without a corresponding lock entry. We
 // considered staging into a temp tree and committing atomically; for v1 the
-// recovery path is "re-run `gh skills add` / `gh skills update` to reach a
+// recovery path is "re-run `gh skill-pack add` / `gh skill-pack update` to reach a
 // consistent state, or delete the orphaned directory by hand". Track in
 // roadmap when we hit a real-world incident.
 package skills
@@ -29,11 +29,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Evangelink/gh-skills/internal/agents"
-	"github.com/Evangelink/gh-skills/internal/layout"
-	"github.com/Evangelink/gh-skills/internal/manifest"
-	"github.com/Evangelink/gh-skills/internal/repo"
-	"github.com/Evangelink/gh-skills/internal/source"
+	"github.com/Evangelink/gh-skill-pack/internal/agents"
+	"github.com/Evangelink/gh-skill-pack/internal/layout"
+	"github.com/Evangelink/gh-skill-pack/internal/manifest"
+	"github.com/Evangelink/gh-skill-pack/internal/repo"
+	"github.com/Evangelink/gh-skill-pack/internal/source"
 )
 
 // ToolVersion is overridden at link time by GoReleaser.
@@ -97,7 +97,7 @@ func (ops *Operations) Add(ctx context.Context, opts AddOptions) (*AddResult, er
 		return nil, fmt.Errorf("resolve ref: %w", err)
 	}
 
-	tmp, err := os.MkdirTemp("", "gh-skills-fetch-")
+	tmp, err := os.MkdirTemp("", "gh-skill-pack-fetch-")
 	if err != nil {
 		return nil, err
 	}
@@ -642,7 +642,7 @@ func safeLockPath(repoRoot, lockRel string) string {
 func EnsureSkillsGitAttributes(repoRoot string) error {
 	rel := filepath.Join(manifest.SkillsDir, ".gitattributes")
 	full := filepath.Join(repoRoot, rel)
-	want := []byte("# managed by gh-skills: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
+	want := []byte("# managed by gh-skill-pack: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
 	existing, err := os.ReadFile(full)
 	if err == nil && bytes.Equal(existing, want) {
 		return nil

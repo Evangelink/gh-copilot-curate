@@ -1,4 +1,4 @@
-# gh-skills
+# gh-skill-pack
 
 A [GitHub CLI](https://cli.github.com/) extension that installs and updates
 agent skills (e.g. [Anthropic-style SKILL.md packages](https://github.com/dotnet/skills))
@@ -22,24 +22,46 @@ issues, `@copilot` mentions) sees them.
 - The GitHub.com Copilot cloud agent runs in Actions and **only sees what's
   committed** — primarily `AGENTS.md` and `.github/copilot-instructions.md`.
   User-installed plugins are invisible to it.
-- `gh-skills` commits skills and agents into your repo so the cloud agent
+- `gh-skill-pack` commits skills and agents into your repo so the cloud agent
   and every contributor get them, deterministically and reproducibly.
+
+## Relationship to built-in `gh skill`
+
+GitHub CLI 2.92+ ships a built-in `gh skill` / `gh skills` command (preview)
+that installs/updates/searches/publishes agent skills across 40+ hosts. If
+you only need _your machine_ to install some skills into `.agents/skills/`,
+use that — it's the official path.
+
+`gh-skill-pack` is complementary and focuses on **committed, team-wide,
+manifest-driven** installs:
+
+- A single `.skills/manifest.yml` you commit to declare which packs are
+  installed and pinned — like `package.json` for skills.
+- An AGENTS.md / `.github/copilot-instructions.md` managed block so the
+  **GitHub.com Copilot cloud agent** (and humans) discover skills via the
+  files agents actually read. The built-in does not write AGENTS.md.
+- `gh skill-pack verify` for drift detection in CI.
+- Layout adapters for non-standard source repos (e.g. dotnet/skills with
+  its `plugins.yml`).
+
+You can use both together: the built-in for personal/global installs, this
+extension for what your repository commits.
 
 ## Prerequisites
 
-- [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth login`). `gh skills add` / `update` use your `gh auth token` to fetch source-repo tarballs from GitHub. Private repos require an account with read access.
-- `git` on PATH (`gh skills init` and other commands prefer `git rev-parse --show-toplevel` for repo-root detection, with a marker-walk fallback).
+- [GitHub CLI](https://cli.github.com/) installed and authenticated (`gh auth login`). `gh skill-pack add` / `update` use your `gh auth token` to fetch source-repo tarballs from GitHub. Private repos require an account with read access.
+- `git` on PATH (`gh skill-pack init` and other commands prefer `git rev-parse --show-toplevel` for repo-root detection, with a marker-walk fallback).
 
 ## Install
 
 ```sh
-gh extension install Evangelink/gh-skills
+gh extension install Evangelink/gh-skill-pack
 ```
 
 Upgrade later with:
 
 ```sh
-gh extension upgrade skills
+gh extension upgrade skill-pack
 ```
 
 ## Quickstart
@@ -47,22 +69,22 @@ gh extension upgrade skills
 ```sh
 # 1. Scaffold .skills/, .skills/manifest.yml, AGENTS.md managed block,
 #    and .skills/.gitattributes (non-destructive).
-gh skills init
+gh skill-pack init
 
 # 2. Install a plugin from a source repo, pinned to a release tag.
-gh skills add dotnet/skills@v1.4.0 --yes
+gh skill-pack add dotnet/skills@v1.4.0 --yes
 
 # 3. Check for drift later.
-gh skills verify
+gh skill-pack verify
 
 # 4. Update everything to the latest pinned refs.
-gh skills update
+gh skill-pack update
 
 # 5. List what's installed.
-gh skills list
+gh skill-pack list
 
 # 6. Remove a plugin.
-gh skills remove dotnet-msbuild
+gh skill-pack remove dotnet-msbuild
 ```
 
 Commit the resulting `.skills/`, `AGENTS.md`, and (if present)
@@ -73,17 +95,17 @@ cloud agent picks them up automatically.
 
 | Command | What it does |
 |---|---|
-| `gh skills init` | Create `.skills/` scaffolding and AGENTS.md managed block. Non-destructive. |
-| `gh skills add <spec> [flags]` | Install a plugin from a source repo. |
-| `gh skills list` | List installed plugins from the lock file. |
-| `gh skills verify` | Check file hashes + managed-block freshness + manifest/lock consistency. |
-| `gh skills remove <plugin>` | Remove a plugin. Refuses on local edits unless `--force`. |
-| `gh skills update [plugin]…` | Re-resolve refs and re-install. Refuses on drift unless `--force`. |
+| `gh skill-pack init` | Create `.skills/` scaffolding and AGENTS.md managed block. Non-destructive. |
+| `gh skill-pack add <spec> [flags]` | Install a plugin from a source repo. |
+| `gh skill-pack list` | List installed plugins from the lock file. |
+| `gh skill-pack verify` | Check file hashes + managed-block freshness + manifest/lock consistency. |
+| `gh skill-pack remove <plugin>` | Remove a plugin. Refuses on local edits unless `--force`. |
+| `gh skill-pack update [plugin]…` | Re-resolve refs and re-install. Refuses on drift unless `--force`. |
 
-### `gh skills add`
+### `gh skill-pack add`
 
 ```
-gh skills add <owner>/<repo>[@<ref>] [flags]
+gh skill-pack add <owner>/<repo>[@<ref>] [flags]
 
   --plugin NAME       Override plugin id (default: derived from repo)
   --include GLOB,...  Only copy files matching these globs (path/Match syntax,
@@ -96,9 +118,9 @@ gh skills add <owner>/<repo>[@<ref>] [flags]
 Examples:
 
 ```sh
-gh skills add dotnet/skills@v1.4.0 --yes
-gh skills add dotnet/skills@main --plugin dotnet-msbuild --include "skills/build-perf/**"
-gh skills add my-org/my-skills@v2 --mode inline --yes
+gh skill-pack add dotnet/skills@v1.4.0 --yes
+gh skill-pack add dotnet/skills@main --plugin dotnet-msbuild --include "skills/build-perf/**"
+gh skill-pack add my-org/my-skills@v2 --mode inline --yes
 ```
 
 ## Layout
@@ -115,10 +137,10 @@ gh skills add my-org/my-skills@v2 --mode inline --yes
       agents/<agent>.agent.md
 AGENTS.md
   # ...your existing content...
-  <!-- BEGIN gh-skills managed -->
-  ## Available skills (managed by gh-skills — do not edit by hand)
+  <!-- BEGIN gh-skill-pack managed -->
+  ## Available skills (managed by gh-skill-pack — do not edit by hand)
   ...summary entries...
-  <!-- END gh-skills managed -->
+  <!-- END gh-skill-pack managed -->
 .github/copilot-instructions.md   # optional — same managed block
 ```
 
@@ -141,7 +163,7 @@ plugins:
 
 ```yaml
 version: 1
-managedBy: gh-skills
+managedBy: gh-skill-pack
 toolVersion: 0.1.0
 generatedAt: 2026-05-28T15:00:00Z
 manifestHash: sha256:...
@@ -169,7 +191,7 @@ plugins:
 ## Cloud-agent integration modes
 
 The Copilot **cloud agent** (and any contributor) reads `AGENTS.md` and
-`.github/copilot-instructions.md`. `gh-skills` writes a single managed block
+`.github/copilot-instructions.md`. `gh-skill-pack` writes a single managed block
 in those files based on the install mode:
 
 | Mode | What lands in AGENTS.md | When to use |
@@ -180,37 +202,37 @@ in those files based on the install mode:
 
 ## Security model
 
-- **No script execution.** `gh-skills` never runs anything it installs.
+- **No script execution.** `gh-skill-pack` never runs anything it installs.
 - **Path-traversal rejection.** All entries are validated against the repo root before any IO. Tarball entries with absolute, drive-qualified, or `..` paths are refused, and we verify each resolved target lives under the destination via `filepath.Rel`.
 - **Symlinks and hardlinks in tarballs are rejected** to avoid host-symlink path-traversal vectors.
 - **Tarball caps.** Extraction is bounded to 5,000 files, 25 MB per file, and
   200 MB total to defend against compression bombs.
-- **Pin to tags.** `gh-skills` warns when you install from a branch ref
+- **Pin to tags.** `gh-skill-pack` warns when you install from a branch ref
   (mutable). Prefer `@v1.4.0` or a commit SHA.
 - **Lock-file paths are validated** on every read so a malicious checked-in
   lock cannot redirect writes outside `.skills/`.
 - **Atomic writes** via `os.CreateTemp` in the target directory + rename, so
   a crashed install never leaves a half-written file in place of a good one.
 - **Provenance in lock.** The resolved commit SHA and upstream hash for
-  every file are recorded so `gh skills verify` can detect tampering or
+  every file are recorded so `gh skill-pack verify` can detect tampering or
   drift.
 
 ## How it differs from `/plugin install`
 
-| | `/plugin install` | `gh skills add` |
+| | `/plugin install` | `gh skill-pack add` |
 |---|---|---|
 | Scope | User's machine | The repository |
 | Visible to cloud agent | ❌ No | ✅ Yes |
 | Picked up by `@copilot` on github.com | ❌ No | ✅ Yes |
 | Reproducible across contributors | ❌ No | ✅ Yes |
 | Version-pinned + lockable | ❌ No | ✅ Yes |
-| Verifiable | ❌ No | ✅ `gh skills verify` |
+| Verifiable | ❌ No | ✅ `gh skill-pack verify` |
 
 ## Development
 
 ```sh
-git clone https://github.com/Evangelink/gh-skills
-cd gh-skills
+git clone https://github.com/Evangelink/gh-skill-pack
+cd gh-skill-pack
 go build ./...
 go test ./...
 ```
@@ -218,18 +240,18 @@ go test ./...
 Install your local build into `gh`:
 
 ```sh
-# produces ./gh-skills (or gh-skills.exe on Windows)
-go build -o gh-skills .          # use gh-skills.exe on Windows
+# produces ./gh-skill-pack (or gh-skill-pack.exe on Windows)
+go build -o gh-skill-pack .          # use gh-skill-pack.exe on Windows
 gh extension install .
-gh skills --help
+gh skill-pack --help
 ```
 
 ## Roadmap (v1.1 +)
 
-- Real 3-way merge on `gh skills update` (fetch BASE by SHA, cache)
+- Real 3-way merge on `gh skill-pack update` (fetch BASE by SHA, cache)
 - `--scope=user` with host detection (Copilot CLI / Claude / Cursor / VS Code)
 - `agentskills.io` standard layout support
-- `gh skills sync` to reconcile from hand-edited manifest
+- `gh skill-pack sync` to reconcile from hand-edited manifest
 - URL specs (`https://github.com/.../blob/...`) and local specs (`./path`)
 - Signature/provenance verification
 - Private-repo auth, rate-limit handling
