@@ -1,5 +1,5 @@
 // Package layout translates an upstream source tree into the canonical
-// gh-agent-pack on-disk format under .agent-pack/plugins/<plugin>/...
+// gh-agent-pack on-disk format under .copilot/plugins/<plugin>/...
 //
 // v1 supports two layouts:
 //
@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/Evangelink/gh-agent-pack/internal/manifest"
 )
 
 // Kind identifies a detected layout.
@@ -36,7 +38,7 @@ const (
 )
 
 // Plugin is a logical bundle of skills+agents+scripts that gh-agent-pack installs
-// as a unit under .agent-pack/plugins/<Name>/.
+// as a unit under .copilot/plugins/<Name>/.
 type Plugin struct {
 	Name  string  // canonical plugin id (kebab-case)
 	Files []File  // every file to copy
@@ -45,7 +47,7 @@ type Plugin struct {
 // File describes a single file to copy from upstream → canonical path.
 type File struct {
 	UpstreamPath  string      // relative to the extracted repo root
-	CanonicalPath string      // relative to repo root, under .agent-pack/plugins/<plugin>/
+	CanonicalPath string      // relative to repo root, under .copilot/plugins/<plugin>/
 	Mode          os.FileMode // file mode bits
 }
 
@@ -228,7 +230,7 @@ func collectPluginFiles(root, pluginDir, plugin string, includes []string) ([]Fi
 		if !matchesIncludes(relInPluginSlash, includes) {
 			return nil
 		}
-		canonical := path.Join(".agent-pack", "plugins", plugin, relInPluginSlash)
+		canonical := path.Join(manifest.PluginsDir, plugin, relInPluginSlash)
 		files = append(files, File{
 			UpstreamPath:  relSlash,
 			CanonicalPath: canonical,
@@ -260,9 +262,9 @@ func canonicalForHeuristic(plugin, relSlash string) string {
 	// Strip everything up to and including "plugins/<plugin>/" if present.
 	prefix := "plugins/" + plugin + "/"
 	if idx := strings.Index(relSlash, prefix); idx >= 0 {
-		return path.Join(".agent-pack", "plugins", plugin, relSlash[idx+len(prefix):])
+		return path.Join(manifest.PluginsDir, plugin, relSlash[idx+len(prefix):])
 	}
-	return path.Join(".agent-pack", "plugins", plugin, relSlash)
+	return path.Join(manifest.PluginsDir, plugin, relSlash)
 }
 
 // matchesIncludes reports whether relSlash is selected by includes. Each

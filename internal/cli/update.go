@@ -22,6 +22,9 @@ func newUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := skills.CheckNoLegacyLayout(root); err != nil {
+				return err
+			}
 			ops := &skills.Operations{}
 			res, err := ops.Update(context.Background(), skills.UpdateOptions{
 				RepoRoot:    root,
