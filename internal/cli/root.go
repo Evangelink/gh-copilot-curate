@@ -41,9 +41,9 @@ repository (e.g. dotnet/skills) into the current repo.
 Installed plugins live under .copilot/plugins/<plugin>/ (mirroring Copilot
 CLI's own ~/.copilot/installed-plugins/<source>/<plugin>/ layout). Tool
 state (manifest, lock) is namespaced under .copilot/curate/. AGENTS.md
-and .github/copilot-instructions.md are updated with a managed block so the
-GitHub.com Copilot cloud agent and every contributor pick them up
-automatically.
+and .github/instructions/copilot-curate.instructions.md are rewritten with
+a managed inventory so the GitHub.com Copilot cloud agent, Copilot CLI,
+and IDE Chats pick up installed skills automatically.
 
 Common workflows:
   gh copilot-curate init
@@ -84,3 +84,21 @@ func fprintln(w io.Writer, args ...any) { _, _ = fmt.Fprintln(w, args...) }
 
 // errf wraps formatting into an error.
 func errf(format string, args ...any) error { return fmt.Errorf(format, args...) }
+
+// printLegacyMigrationNotice surfaces the v0.4 → v0.5 one-shot migration
+// when a mutating command actually removed the legacy managed block from
+// .github/copilot-instructions.md (and optionally the file itself).
+// Idempotent by construction: subsequent runs find nothing to migrate and
+// pass cleaned=false, so the message only ever prints once per repo.
+func printLegacyMigrationNotice(cmd *cobra.Command, cleaned, deleted bool) {
+	if !cleaned {
+		return
+	}
+	out := cmd.OutOrStdout()
+	if deleted {
+		fprintln(out, "migrated v0.4 layout: removed .github/copilot-instructions.md (was empty after the gh-copilot-curate managed block was stripped)")
+	} else {
+		fprintln(out, "migrated v0.4 layout: stripped the gh-copilot-curate managed block from .github/copilot-instructions.md (preserved your other content)")
+	}
+	fprintln(out, "  instructions now live in .github/instructions/copilot-curate.instructions.md (path-specific custom instructions, applyTo \"**\")")
+}

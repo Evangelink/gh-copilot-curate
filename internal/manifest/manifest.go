@@ -64,7 +64,8 @@ const (
 )
 
 // InstallMode controls how a plugin's content is surfaced to AI agents via
-// AGENTS.md / copilot-instructions.md.
+// the AGENTS.md managed block and the path-specific
+// .github/instructions/copilot-curate.instructions.md file.
 type InstallMode string
 
 const (

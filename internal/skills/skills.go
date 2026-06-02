@@ -59,11 +59,18 @@ type AddOptions struct {
 
 // AddResult summarises what `add` did (or would do, in dry-run mode).
 type AddResult struct {
-	Plugins        []PluginChange
-	Manifest       *manifest.Manifest
-	Lock           *manifest.Lock
-	AgentsChanged  bool
-	CopilotChanged bool
+	Plugins             []PluginChange
+	Manifest            *manifest.Manifest
+	Lock                *manifest.Lock
+	AgentsChanged       bool
+	InstructionsChanged bool
+	// LegacyBlockCleaned is true when this command removed the v0.4-era
+	// managed block from .github/copilot-instructions.md as part of the
+	// v0.5 migration. LegacyFileDeleted is true when that file was also
+	// removed because it had no other content. Used by the CLI to print a
+	// one-shot migration notice.
+	LegacyBlockCleaned bool
+	LegacyFileDeleted  bool
 }
 
 // PluginChange describes the change for a single installed plugin.
@@ -258,10 +265,12 @@ type RemoveOptions struct {
 
 // RemoveResult reports what was removed.
 type RemoveResult struct {
-	Files         []string
-	DriftDetected bool
-	Manifest      *manifest.Manifest
-	Lock          *manifest.Lock
+	Files              []string
+	DriftDetected      bool
+	Manifest           *manifest.Manifest
+	Lock               *manifest.Lock
+	LegacyBlockCleaned bool
+	LegacyFileDeleted  bool
 }
 
 // Remove deletes a plugin's files. If any file is locally modified, refuses
@@ -330,30 +339,40 @@ func (ops *Operations) Remove(opts RemoveOptions) (*RemoveResult, error) {
 	if err := writeLock(opts.RepoRoot, mf, lock); err != nil {
 		return res, err
 	}
-	if err := rewriteAgentsBlocksAfterChange(opts.RepoRoot, lock); err != nil {
+	rw, err := rewriteAgentsBlocksAfterChange(opts.RepoRoot, lock)
+	if err != nil {
 		return res, err
 	}
+	res.LegacyBlockCleaned = rw.LegacyBlockCleaned
+	res.LegacyFileDeleted = rw.LegacyFileDeleted
 	return res, nil
 }
 
 // VerifyResult reports drift between the lock and the on-disk state.
 type VerifyResult struct {
-	MissingFiles      []string
-	ModifiedFiles     []string
-	UnknownInLock     []string // files in lock with bad path / unreadable
-	ManifestStale     bool
-	BlockStale        bool
-	CopilotBlockStale bool
+	MissingFiles         []string
+	ModifiedFiles        []string
+	UnknownInLock        []string // files in lock with bad path / unreadable
+	ManifestStale        bool
+	BlockStale           bool
+	InstructionsFileStale bool
+	// LegacyBlockPresent flags that .github/copilot-instructions.md still
+	// carries a v0.4-era managed block. Verify only reports this; the
+	// migration runs on the next mutating command (add/update/remove/init).
+	LegacyBlockPresent bool
 }
 
 // OK reports whether the verify result is clean.
 func (v VerifyResult) OK() bool {
-	return len(v.MissingFiles) == 0 && len(v.ModifiedFiles) == 0 && len(v.UnknownInLock) == 0 && !v.ManifestStale && !v.BlockStale && !v.CopilotBlockStale
+	return len(v.MissingFiles) == 0 && len(v.ModifiedFiles) == 0 && len(v.UnknownInLock) == 0 &&
+		!v.ManifestStale && !v.BlockStale && !v.InstructionsFileStale && !v.LegacyBlockPresent
 }
 
 // Verify checks that every locked file exists with matching hash, that the
-// manifest hash matches the lock's, and that AGENTS.md and the Copilot
-// instructions managed blocks are current.
+// manifest hash matches the lock's, and that the AGENTS.md managed block
+// and the path-specific instructions file are current. It also reports
+// when the legacy v0.4 managed block in .github/copilot-instructions.md
+// is still present (a migration is pending).
 func (ops *Operations) Verify(repoRoot string) (*VerifyResult, error) {
 	mf, err := manifest.LoadManifest(repoRoot)
 	if err != nil {
@@ -400,17 +419,23 @@ func (ops *Operations) Verify(repoRoot string) (*VerifyResult, error) {
 	if !ok {
 		res.BlockStale = true
 	}
-	// Only check the Copilot instructions block if the file exists. We only
-	// create it when something has actually been installed; an init-only
-	// repo legitimately won't have one yet.
-	copilotFull := filepath.Join(repoRoot, filepath.FromSlash(agents.CopilotInstFile))
-	if _, statErr := os.Stat(copilotFull); statErr == nil {
-		ok, err := agents.ManagedBlockMatches(repoRoot, agents.CopilotInstFile, entries)
-		if err != nil {
-			return res, err
-		}
-		if !ok {
-			res.CopilotBlockStale = true
+	// Path-specific instructions file: drift is reported when the file
+	// contents don't match what WriteInstructionsFile would produce. The
+	// helper handles the "missing file with no entries → match" semantics.
+	instOK, err := agents.InstructionsFileMatches(repoRoot, entries)
+	if err != nil {
+		return res, err
+	}
+	if !instOK {
+		res.InstructionsFileStale = true
+	}
+	// Legacy v0.4 managed block: report when still present so users see
+	// they need to run a mutating command (or `init`) to migrate. We don't
+	// mutate from verify itself.
+	legacyFull := filepath.Join(repoRoot, filepath.FromSlash(agents.LegacyCopilotInstFile))
+	if data, statErr := os.ReadFile(legacyFull); statErr == nil {
+		if bytes.Contains(data, []byte(agents.BeginMarker)) && bytes.Contains(data, []byte(agents.EndMarker)) {
+			res.LegacyBlockPresent = true
 		}
 	}
 	sort.Strings(res.MissingFiles)
@@ -431,7 +456,9 @@ type UpdateOptions struct {
 
 // UpdateResult summarises an update run.
 type UpdateResult struct {
-	Plugins []PluginChange
+	Plugins            []PluginChange
+	LegacyBlockCleaned bool
+	LegacyFileDeleted  bool
 }
 
 // Update re-fetches each plugin at its manifest ref and rewrites files.
@@ -505,6 +532,14 @@ func (ops *Operations) Update(ctx context.Context, opts UpdateOptions) (*UpdateR
 			return res, err
 		}
 		res.Plugins = append(res.Plugins, addRes.Plugins...)
+		// Surface the v0.4 → v0.5 migration on whichever Add actually
+		// performed the cleanup (only the first call will, by definition).
+		if addRes.LegacyBlockCleaned {
+			res.LegacyBlockCleaned = true
+		}
+		if addRes.LegacyFileDeleted {
+			res.LegacyFileDeleted = true
+		}
 	}
 	return res, nil
 }
@@ -560,30 +595,70 @@ func BuildEntries(repoRoot string, lock *manifest.Lock) []agents.Entry {
 	return entries
 }
 
-func rewriteAgentsBlocks(repoRoot string, lock *manifest.Lock, res *AddResult) error {
+// rewriteResult bundles outputs from one full curate-managed write pass:
+// AGENTS.md block, the path-specific instructions file, and any v0.4
+// legacy migration that happened along the way. The CLI surfaces the
+// LegacyBlockCleaned / LegacyFileDeleted flags as a one-shot notice.
+type rewriteResult struct {
+	AgentsChanged       bool
+	InstructionsChanged bool
+	LegacyBlockCleaned  bool
+	LegacyFileDeleted   bool
+}
+
+// rewriteCurateManagedFiles updates every file gh-copilot-curate owns to
+// reflect the current lock contents:
+//
+//  1. Rewrites the AGENTS.md managed block (preserving user content
+//     outside the markers).
+//  2. Rewrites .github/instructions/copilot-curate.instructions.md
+//     wholesale, regenerating the YAML front-matter and inventory body.
+//  3. Removes any v0.4-era managed block from
+//     .github/copilot-instructions.md, deleting the file if it would
+//     otherwise be empty.
+//
+// All three steps run for every mutating command (add / update / remove /
+// init bootstrap) so a single user-facing operation always leaves the
+// repo in a consistent v0.5 state.
+func rewriteCurateManagedFiles(repoRoot string, lock *manifest.Lock) (rewriteResult, error) {
 	entries := BuildEntries(repoRoot, lock)
+	var out rewriteResult
 	a, err := agents.WriteManagedBlock(repoRoot, agents.AgentsFile, entries)
 	if err != nil {
-		return err
+		return out, err
 	}
-	res.AgentsChanged = a
-	c, err := agents.WriteManagedBlock(repoRoot, agents.CopilotInstFile, entries)
+	out.AgentsChanged = a
+	i, err := agents.WriteInstructionsFile(repoRoot, entries)
+	if err != nil {
+		return out, err
+	}
+	out.InstructionsChanged = i
+	cleaned, deleted, err := agents.CleanLegacyCopilotInstructionsBlock(repoRoot)
+	if err != nil {
+		return out, err
+	}
+	out.LegacyBlockCleaned = cleaned
+	out.LegacyFileDeleted = deleted
+	return out, nil
+}
+
+func rewriteAgentsBlocks(repoRoot string, lock *manifest.Lock, res *AddResult) error {
+	r, err := rewriteCurateManagedFiles(repoRoot, lock)
 	if err != nil {
 		return err
 	}
-	res.CopilotChanged = c
+	res.AgentsChanged = r.AgentsChanged
+	res.InstructionsChanged = r.InstructionsChanged
+	res.LegacyBlockCleaned = r.LegacyBlockCleaned
+	res.LegacyFileDeleted = r.LegacyFileDeleted
 	return nil
 }
 
-func rewriteAgentsBlocksAfterChange(repoRoot string, lock *manifest.Lock) error {
-	entries := BuildEntries(repoRoot, lock)
-	if _, err := agents.WriteManagedBlock(repoRoot, agents.AgentsFile, entries); err != nil {
-		return err
-	}
-	if _, err := agents.WriteManagedBlock(repoRoot, agents.CopilotInstFile, entries); err != nil {
-		return err
-	}
-	return nil
+// rewriteAgentsBlocksAfterChange is used by update/remove paths that don't
+// surface an AddResult to the caller. Returns the rewrite metadata so the
+// CLI can still print the legacy-migration notice when applicable.
+func rewriteAgentsBlocksAfterChange(repoRoot string, lock *manifest.Lock) (rewriteResult, error) {
+	return rewriteCurateManagedFiles(repoRoot, lock)
 }
 
 func writeLock(repoRoot string, mf *manifest.Manifest, lock *manifest.Lock) error {
@@ -694,7 +769,7 @@ func CheckNoLegacyLayout(repoRoot string) error {
 			"       gh copilot-curate init && gh copilot-curate add <owner/repo>[@ref]\n"+
 			"  2. Move %s/manifest.yml to %s, delete the rest of %s/, then run\n"+
 			"     `gh copilot-curate add` (no args) to re-resolve the lock.\n"+
-			"AGENTS.md / .github/copilot-instructions.md managed blocks will be regenerated automatically.",
+			"AGENTS.md and .github/instructions/copilot-curate.instructions.md will be regenerated automatically.",
 			manifest.LegacyV03ToolStateDir, manifest.ToolStateDir,
 			manifest.LegacyV03ToolStateDir, manifest.PackRoot,
 			manifest.LegacyV03ToolStateDir, manifest.ManifestPath, manifest.LegacyV03ToolStateDir)
@@ -708,7 +783,7 @@ func CheckNoLegacyLayout(repoRoot string) error {
 			"       gh copilot-curate init && gh copilot-curate add <owner/repo>[@ref]\n"+
 			"  2. Move %s/manifest.yml to %s and delete %s/.\n"+
 			"     Then run `gh copilot-curate add` (no args) to re-resolve the lock.\n"+
-			"AGENTS.md / .github/copilot-instructions.md managed blocks will be regenerated automatically.",
+			"AGENTS.md and .github/instructions/copilot-curate.instructions.md will be regenerated automatically.",
 			manifest.LegacyPackRoot, manifest.ToolStateDir,
 			manifest.LegacyPackRoot,
 			manifest.LegacyPackRoot, manifest.ManifestPath, manifest.LegacyPackRoot)

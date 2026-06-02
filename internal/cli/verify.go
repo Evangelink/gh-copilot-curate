@@ -41,8 +41,11 @@ func newVerifyCmd() *cobra.Command {
 			if res.BlockStale {
 				fprintln(out, "AGENTS.md managed block is out of date; run `gh copilot-curate update`")
 			}
-			if res.CopilotBlockStale {
-				fprintln(out, ".github/copilot-instructions.md managed block is out of date; run `gh copilot-curate update`")
+			if res.InstructionsFileStale {
+				fprintln(out, ".github/instructions/copilot-curate.instructions.md is out of date; run `gh copilot-curate update`")
+			}
+			if res.LegacyBlockPresent {
+				fprintln(out, ".github/copilot-instructions.md still contains a v0.4 managed block; run any `gh copilot-curate` mutating command (add/update/remove/init) to migrate")
 			}
 			return errf("verify failed: %d missing, %d modified, %d unreadable",
 				len(res.MissingFiles), len(res.ModifiedFiles), len(res.UnknownInLock))

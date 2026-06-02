@@ -3,15 +3,67 @@
 > **A repo-scoped Copilot context curator.** Installs whole *plugin bundles*
 > (SKILL.md files + `.agent.md` sub-agents + supporting scripts) from a
 > source repo into your target repo, tracks them in a committed manifest,
-> and surfaces them in `AGENTS.md` / `.github/copilot-instructions.md` so
-> every contributor — and the GitHub.com Copilot **cloud agent** — sees
-> what your repo declares.
+> and surfaces them via the AGENTS.md managed block and a path-specific
+> custom-instructions file at
+> `.github/instructions/copilot-curate.instructions.md` so every
+> contributor — and the GitHub.com Copilot **cloud agent** — sees what
+> your repo declares.
 
 > Modeled on [`gh aw`](https://github.com/githubnext/gh-aw)'s lifecycle.
-> Ships precompiled binaries via `gh extension install`. v0.4.0 introduces
-> a **breaking rename**: the extension is now `gh copilot-curate` (was
-> `gh agent-pack`) and the tool-state dir moved from
-> `.copilot/agent-pack/` to `.copilot/curate/`. See migration notes below.
+> Ships precompiled binaries via `gh extension install`. v0.5.0 is a
+> **breaking change** that migrates curate-managed instructions out of
+> the shared `.github/copilot-instructions.md` into a dedicated
+> path-specific file. The migration runs automatically on the next
+> mutating command (no user action required). See migration notes below.
+
+## v0.5.0 — breaking change: instructions moved to a path-specific file
+
+In v0.4.x, `gh-copilot-curate` wrote a managed block into the shared
+`.github/copilot-instructions.md`, which forced the tool to coexist with
+hand-authored repo-wide instructions in a single file.
+
+In v0.5.0 the managed block is replaced by a **dedicated path-specific
+custom-instructions file** owned entirely by the tool:
+
+```
+.github/instructions/copilot-curate.instructions.md
+```
+
+The file carries a YAML front-matter (`applyTo: "**"`) so GitHub Copilot
+treats it as a custom-instructions file applying to every file in the
+repo. AGENTS.md continues to carry the same managed block (unchanged
+markers, unchanged inventory).
+
+**Surface coverage** (from the
+[GitHub Copilot custom-instructions support matrix](https://docs.github.com/en/copilot/reference/custom-instructions-support)):
+
+| Surface | Reads the new file? |
+|---|---|
+| GitHub.com Copilot **cloud agent** (assigned issues, `@copilot`) | ✅ |
+| GitHub.com code review | ✅ |
+| Copilot CLI | ✅ |
+| VS Code Chat, cloud agent, Visual Studio Chat, JetBrains, Xcode | ✅ |
+| GitHub.com **Copilot Chat** | ❌ — falls back to AGENTS.md only |
+| Eclipse Chat, VS Code code review | ❌ — falls back to AGENTS.md only |
+
+For surfaces that don't yet support path-specific instructions, the
+AGENTS.md managed block still carries the same inventory, so coverage
+degrades gracefully.
+
+**Automatic migration**: the next time you run **any** mutating command
+(`init`, `add`, `update`, `remove`), gh-copilot-curate will:
+
+1. Write `.github/instructions/copilot-curate.instructions.md` with the
+   current inventory and `applyTo: "**"` front-matter.
+2. Strip the v0.4 managed block from
+   `.github/copilot-instructions.md`. If that file becomes empty (i.e.
+   you never added hand-authored content alongside the managed block),
+   it is deleted. Otherwise your hand-authored content is preserved
+   verbatim.
+3. Print a one-shot migration notice.
+
+`gh copilot-curate verify` reports the legacy block as drift until a
+mutating command runs.
 
 ## v0.4.0 — breaking change: tool renamed to `gh copilot-curate`
 
@@ -76,9 +128,9 @@ on-disk dirs: `.copilot/plugins/` vs `.agents/skills/`).
   (`gh skill install --scope=project` does commit into the project, but
   only one SKILL.md at a time).
 - The GitHub.com Copilot **cloud agent** runs in Actions and **only sees
-  what's committed** — primarily `AGENTS.md` and
-  `.github/copilot-instructions.md`. User-installed skills and locally
-  configured agents are invisible to it.
+  what's committed** — primarily `AGENTS.md` and the path-specific
+  custom-instructions files under `.github/instructions/`. User-installed
+  skills and locally configured agents are invisible to it.
 - `dotnet/skills`-style sources ship **plugins** — coherent bundles of
   skills + `.agent.md` agents + scripts under a single plugin id — and
   no tool currently installs the bundle as a unit.
@@ -90,13 +142,13 @@ that file (Copilot cloud agent, Claude Code, Cursor in repo mode, etc.)
 has at least pointers to it.
 
 > ⚠ **Honest caveat about cloud-agent discovery.** We *write to*
-> `AGENTS.md` and `.github/copilot-instructions.md` — the files
-> Copilot's cloud agent reads when working on an issue. Whether the
-> cloud agent then *follows the links* into `.copilot/plugins/...SKILL.md` /
-> `.agent.md` is up to the agent's behavior, not something this tool
-> can guarantee. Use `--mode inline` for skills the agent **must** see
-> in full (it embeds the SKILL.md body directly in `AGENTS.md` so no
-> link-following is required).
+> `AGENTS.md` and `.github/instructions/copilot-curate.instructions.md`
+> — the files Copilot's cloud agent reads when working on an issue.
+> Whether the cloud agent then *follows the links* into
+> `.copilot/plugins/...SKILL.md` / `.agent.md` is up to the agent's
+> behavior, not something this tool can guarantee. Use `--mode inline`
+> for skills the agent **must** see in full (it embeds the SKILL.md
+> body directly so no link-following is required).
 
 ## Prerequisites
 
@@ -145,9 +197,9 @@ gh copilot-curate list
 gh copilot-curate remove dotnet-test
 ```
 
-Commit the resulting `.copilot/`, `AGENTS.md`, and (if present)
-`.github/copilot-instructions.md`. From that point, every contributor
-and the cloud agent picks them up automatically.
+Commit the resulting `.copilot/`, `AGENTS.md`, and
+`.github/instructions/copilot-curate.instructions.md`. From that point,
+every contributor and the cloud agent picks them up automatically.
 
 ## Commands
 
@@ -207,7 +259,11 @@ AGENTS.md
   ## Available skills (managed by gh-copilot-curate — do not edit by hand)
   ...summary entries...
   <!-- END gh-copilot-curate managed -->
-.github/copilot-instructions.md   # optional — same managed block
+.github/instructions/copilot-curate.instructions.md
+  # Path-specific custom-instructions file owned wholesale by gh-copilot-curate.
+  # Front-matter: applyTo: "**" — applies to every file in the repo.
+  # Contains the same inventory as the AGENTS.md managed block, with
+  # links rewritten relative to .github/instructions/.
 ```
 
 ## Manifest schema
@@ -257,8 +313,16 @@ plugins:
 ## Cloud-agent integration modes
 
 The Copilot **cloud agent** (and any contributor) reads `AGENTS.md` and
-`.github/copilot-instructions.md`. `gh-copilot-curate` writes a single
-managed block into those files based on the install mode:
+the path-specific instructions file at
+`.github/instructions/copilot-curate.instructions.md`.
+`gh-copilot-curate` writes the same managed inventory into both:
+
+- the AGENTS.md managed block (between the `<!-- BEGIN gh-copilot-curate
+  managed -->` / `<!-- END gh-copilot-curate managed -->` markers), and
+- the path-specific instructions file, which it owns wholesale (no
+  manual edits — the file is regenerated on every mutating command).
+
+The render mode controls **what** lands in both files:
 
 | Mode | What lands in AGENTS.md | When to use |
 |---|---|---|

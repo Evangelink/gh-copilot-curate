@@ -52,6 +52,23 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 			fprintln(cmd.OutOrStdout(), "managed block ready in", agents.AgentsFile)
+			// v0.4 → v0.5 one-shot migration: if a previous version left a
+			// managed block in .github/copilot-instructions.md, strip it
+			// (and delete the file if it becomes empty). We deliberately do
+			// NOT bootstrap the new instructions file here — it is created
+			// lazily on first `add` so an empty global path-spec doesn't
+			// add noise to repos that only ran `init`.
+			cleaned, deleted, err := agents.CleanLegacyCopilotInstructionsBlock(root)
+			if err != nil {
+				return err
+			}
+			if cleaned {
+				if deleted {
+					fprintln(cmd.OutOrStdout(), "migrated v0.4 layout: removed", agents.LegacyCopilotInstFile)
+				} else {
+					fprintln(cmd.OutOrStdout(), "migrated v0.4 layout: stripped managed block from", agents.LegacyCopilotInstFile)
+				}
+			}
 			fprintln(cmd.OutOrStdout(), "\nNext: gh copilot-curate add <owner/repo>[@ref]")
 			return nil
 		},
