@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Evangelink/gh-agent-pack/internal/layout"
-	"github.com/Evangelink/gh-agent-pack/internal/manifest"
-	"github.com/Evangelink/gh-agent-pack/internal/skills"
-	"github.com/Evangelink/gh-agent-pack/internal/source"
+	"github.com/Evangelink/gh-copilot-curate/internal/layout"
+	"github.com/Evangelink/gh-copilot-curate/internal/manifest"
+	"github.com/Evangelink/gh-copilot-curate/internal/skills"
+	"github.com/Evangelink/gh-copilot-curate/internal/source"
 )
 
 func newAddCmd() *cobra.Command {

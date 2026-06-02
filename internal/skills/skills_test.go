@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Evangelink/gh-agent-pack/internal/manifest"
-	"github.com/Evangelink/gh-agent-pack/internal/source"
+	"github.com/Evangelink/gh-copilot-curate/internal/manifest"
+	"github.com/Evangelink/gh-copilot-curate/internal/source"
 )
 
 // stubFetcher serves a fixed tarball + sha for tests; no network.
@@ -71,7 +71,7 @@ func TestAddInstallsDotnetSkillsPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(agentsMd), "BEGIN gh-agent-pack managed") {
+	if !strings.Contains(string(agentsMd), "BEGIN gh-copilot-curate managed") {
 		t.Errorf("AGENTS.md missing managed block:\n%s", agentsMd)
 	}
 	if !strings.Contains(string(agentsMd), "Build perf") {

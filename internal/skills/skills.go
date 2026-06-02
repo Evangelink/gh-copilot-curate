@@ -9,7 +9,7 @@
 // and lock updates. A failure partway through can leave orphaned files
 // under .copilot/plugins/<id>/ without a corresponding lock entry. We
 // considered staging into a temp tree and committing atomically; for v1 the
-// recovery path is "re-run `gh agent-pack add` / `gh agent-pack update` to reach a
+// recovery path is "re-run `gh copilot-curate add` / `gh copilot-curate update` to reach a
 // consistent state, or delete the orphaned directory by hand". Track in
 // roadmap when we hit a real-world incident.
 package skills
@@ -29,11 +29,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Evangelink/gh-agent-pack/internal/agents"
-	"github.com/Evangelink/gh-agent-pack/internal/layout"
-	"github.com/Evangelink/gh-agent-pack/internal/manifest"
-	"github.com/Evangelink/gh-agent-pack/internal/repo"
-	"github.com/Evangelink/gh-agent-pack/internal/source"
+	"github.com/Evangelink/gh-copilot-curate/internal/agents"
+	"github.com/Evangelink/gh-copilot-curate/internal/layout"
+	"github.com/Evangelink/gh-copilot-curate/internal/manifest"
+	"github.com/Evangelink/gh-copilot-curate/internal/repo"
+	"github.com/Evangelink/gh-copilot-curate/internal/source"
 )
 
 // ToolVersion is overridden at link time by GoReleaser.
@@ -97,7 +97,7 @@ func (ops *Operations) Add(ctx context.Context, opts AddOptions) (*AddResult, er
 		return nil, fmt.Errorf("resolve ref: %w", err)
 	}
 
-	tmp, err := os.MkdirTemp("", "gh-agent-pack-fetch-")
+	tmp, err := os.MkdirTemp("", "gh-copilot-curate-fetch-")
 	if err != nil {
 		return nil, err
 	}
@@ -638,13 +638,13 @@ func safeLockPath(repoRoot, lockRel string) string {
 // `* text eol=lf` so files under .copilot/ keep stable byte content across
 // clones with core.autocrlf enabled. Without this, localHash comparison in
 // verify produces spurious drift after a Windows checkout. The file is
-// placed at the .copilot/ root so it covers both .copilot/agent-pack/ (lock,
+// placed at the .copilot/ root so it covers both .copilot/curate/ (lock,
 // manifest) and .copilot/plugins/<plugin>/... installed content.
 // Idempotent: the file is only written if absent or its content differs.
 func EnsurePackGitAttributes(repoRoot string) error {
 	rel := filepath.Join(manifest.PackRoot, ".gitattributes")
 	full := filepath.Join(repoRoot, rel)
-	want := []byte("# managed by gh-agent-pack: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
+	want := []byte("# managed by gh-copilot-curate: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
 	existing, err := os.ReadFile(full)
 	if err == nil && bytes.Equal(existing, want) {
 		return nil
@@ -673,26 +673,45 @@ func hashBytes(b []byte) string {
 }
 
 // CheckNoLegacyLayout returns a descriptive error if the target repo still
-// contains a v0.2.x install at .agent-pack/. v0.3.0 moved installs to
-// .copilot/; running v0.3 against a v0.2 layout would silently create a
-// parallel install and leave AGENTS.md links inconsistent.
+// contains an install from an earlier version of this tool. v0.3.0 moved
+// installs from .agent-pack/ (v0.2.x) to .copilot/agent-pack/; v0.4.0
+// renamed the tool from gh-agent-pack to gh-copilot-curate and moved the
+// tool-state dir from .copilot/agent-pack/ to .copilot/curate/. Running
+// v0.4+ against either legacy layout would silently create a parallel
+// install and leave AGENTS.md links inconsistent.
 //
 // Callers should invoke this from any mutating command (init, add, update,
 // remove) before performing IO. Verify/list are intentionally exempt so
 // users can still inspect a legacy install.
 func CheckNoLegacyLayout(repoRoot string) error {
-	legacy := filepath.Join(repoRoot, manifest.LegacyPackRoot)
-	if _, err := os.Stat(legacy); err != nil {
-		return nil
+	// v0.3.x layout (this tool, when it was still called gh-agent-pack).
+	v03 := filepath.Join(repoRoot, manifest.LegacyV03ToolStateDir)
+	if _, err := os.Stat(v03); err == nil {
+		return fmt.Errorf("this repository uses the v0.3 layout at %s/; v0.4 installs to %s/.\n"+
+			"The tool was also renamed from gh-agent-pack to gh-copilot-curate.\n"+
+			"To migrate, either:\n"+
+			"  1. (Recommended for unmerged installs) Delete %s/ and any %s/plugins/ contents, then re-run:\n"+
+			"       gh copilot-curate init && gh copilot-curate add <owner/repo>[@ref]\n"+
+			"  2. Move %s/manifest.yml to %s, delete the rest of %s/, then run\n"+
+			"     `gh copilot-curate add` (no args) to re-resolve the lock.\n"+
+			"AGENTS.md / .github/copilot-instructions.md managed blocks will be regenerated automatically.",
+			manifest.LegacyV03ToolStateDir, manifest.ToolStateDir,
+			manifest.LegacyV03ToolStateDir, manifest.PackRoot,
+			manifest.LegacyV03ToolStateDir, manifest.ManifestPath, manifest.LegacyV03ToolStateDir)
 	}
-	return fmt.Errorf("this repository uses the v0.2 layout at %s/; v0.3 installs to %s/.\n"+
-		"To migrate, either:\n"+
-		"  1. (Recommended for unmerged installs) Delete %s/ and re-run:\n"+
-		"       gh agent-pack init && gh agent-pack add <owner/repo>[@ref]\n"+
-		"  2. Move %s/manifest.yml to %s and delete %s/.\n"+
-		"     Then run `gh agent-pack add` (no args) to re-resolve the lock.\n"+
-		"AGENTS.md / .github/copilot-instructions.md managed blocks will be regenerated automatically.",
-		manifest.LegacyPackRoot, manifest.PackRoot,
-		manifest.LegacyPackRoot,
-		manifest.LegacyPackRoot, manifest.ManifestPath, manifest.LegacyPackRoot)
+	// v0.2.x layout.
+	v02 := filepath.Join(repoRoot, manifest.LegacyPackRoot)
+	if _, err := os.Stat(v02); err == nil {
+		return fmt.Errorf("this repository uses the v0.2 layout at %s/; v0.4 installs to %s/.\n"+
+			"To migrate, either:\n"+
+			"  1. (Recommended for unmerged installs) Delete %s/ and re-run:\n"+
+			"       gh copilot-curate init && gh copilot-curate add <owner/repo>[@ref]\n"+
+			"  2. Move %s/manifest.yml to %s and delete %s/.\n"+
+			"     Then run `gh copilot-curate add` (no args) to re-resolve the lock.\n"+
+			"AGENTS.md / .github/copilot-instructions.md managed blocks will be regenerated automatically.",
+			manifest.LegacyPackRoot, manifest.ToolStateDir,
+			manifest.LegacyPackRoot,
+			manifest.LegacyPackRoot, manifest.ManifestPath, manifest.LegacyPackRoot)
+	}
+	return nil
 }

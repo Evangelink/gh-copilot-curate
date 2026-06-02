@@ -1,6 +1,6 @@
 # Binaries
-gh-agent-pack
-gh-agent-pack.exe
+gh-copilot-curate
+gh-copilot-curate.exe
 dist/
 
 # Go workspace

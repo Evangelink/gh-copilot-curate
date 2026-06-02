@@ -3,7 +3,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/Evangelink/gh-agent-pack/internal/skills"
+	"github.com/Evangelink/gh-copilot-curate/internal/skills"
 )
 
 func newVerifyCmd() *cobra.Command {
@@ -36,13 +36,13 @@ func newVerifyCmd() *cobra.Command {
 				fprintln(out, "unreadable:", f)
 			}
 			if res.ManifestStale {
-				fprintln(out, "manifest changed since lock; run `gh agent-pack update`")
+				fprintln(out, "manifest changed since lock; run `gh copilot-curate update`")
 			}
 			if res.BlockStale {
-				fprintln(out, "AGENTS.md managed block is out of date; run `gh agent-pack update`")
+				fprintln(out, "AGENTS.md managed block is out of date; run `gh copilot-curate update`")
 			}
 			if res.CopilotBlockStale {
-				fprintln(out, ".github/copilot-instructions.md managed block is out of date; run `gh agent-pack update`")
+				fprintln(out, ".github/copilot-instructions.md managed block is out of date; run `gh copilot-curate update`")
 			}
 			return errf("verify failed: %d missing, %d modified, %d unreadable",
 				len(res.MissingFiles), len(res.ModifiedFiles), len(res.UnknownInLock))

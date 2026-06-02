@@ -1,4 +1,4 @@
-# GoReleaser config for gh-agent-pack.
+# GoReleaser config for gh-copilot-curate.
 #
 # gh's extension manager downloads precompiled binaries named
 # `gh-EXTNAME-OS-ARCH[.exe]` directly from a release. We disable archives so
@@ -11,8 +11,8 @@ before:
     - go mod tidy
 
 builds:
-  - id: gh-agent-pack
-    binary: gh-agent-pack-{{ .Os }}-{{ .Arch }}
+  - id: gh-copilot-curate
+    binary: gh-copilot-curate-{{ .Os }}-{{ .Arch }}
     main: ./
     env:
       - CGO_ENABLED=0
@@ -28,9 +28,9 @@ builds:
     no_unique_dist_dir: true
 
 archives:
-  - id: gh-agent-pack-binaries
+  - id: gh-copilot-curate-binaries
     formats: [binary]
-    name_template: "gh-agent-pack-{{ .Os }}-{{ .Arch }}"
+    name_template: "gh-copilot-curate-{{ .Os }}-{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"

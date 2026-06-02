@@ -1,4 +1,4 @@
-// Package agents writes the gh-agent-pack managed block into AGENTS.md and
+// Package agents writes the gh-copilot-curate managed block into AGENTS.md and
 // .github/copilot-instructions.md, and extracts skill summaries from
 // installed SKILL.md / .agent.md files.
 //
@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	BeginMarker = "<!-- BEGIN gh-agent-pack managed -->"
-	EndMarker   = "<!-- END gh-agent-pack managed -->"
+	BeginMarker = "<!-- BEGIN gh-copilot-curate managed -->"
+	EndMarker   = "<!-- END gh-copilot-curate managed -->"
 
 	AgentsFile      = "AGENTS.md"
 	CopilotInstFile = ".github/copilot-instructions.md"
@@ -123,10 +123,10 @@ func renderManagedBlock(entries []Entry) string {
 
 	var b strings.Builder
 	b.WriteString(BeginMarker + "\n")
-	b.WriteString("## Available skills (managed by gh-agent-pack — do not edit by hand)\n\n")
-	b.WriteString("Run `gh agent-pack list` to see installed plugins; run `gh agent-pack update` to refresh.\n\n")
+	b.WriteString("## Available skills (managed by gh-copilot-curate — do not edit by hand)\n\n")
+	b.WriteString("Run `gh copilot-curate list` to see installed plugins; run `gh copilot-curate update` to refresh.\n\n")
 	if len(plugins) == 0 {
-		b.WriteString("_No plugins installed yet. Add one with `gh agent-pack add owner/repo`._\n")
+		b.WriteString("_No plugins installed yet. Add one with `gh copilot-curate add owner/repo`._\n")
 	}
 	for _, p := range plugins {
 		items := byPlugin[p]
