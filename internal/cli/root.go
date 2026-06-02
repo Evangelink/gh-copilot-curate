@@ -38,8 +38,10 @@ func NewRootCmd(version string) *cobra.Command {
 const rootLong = `gh-agent-pack installs and updates AI agent skills/plugins from a source
 repository (e.g. dotnet/skills) into the current repo.
 
-Files are committed under .agent-pack/, and AGENTS.md plus
-.github/copilot-instructions.md are updated with a managed block so the
+Installed plugins live under .copilot/plugins/<plugin>/ (mirroring Copilot
+CLI's own ~/.copilot/installed-plugins/<source>/<plugin>/ layout). Tool
+state (manifest, lock) is namespaced under .copilot/agent-pack/. AGENTS.md
+and .github/copilot-instructions.md are updated with a managed block so the
 GitHub.com Copilot cloud agent and every contributor pick them up
 automatically.
 

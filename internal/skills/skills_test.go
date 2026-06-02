@@ -44,7 +44,7 @@ func TestAddInstallsDotnetSkillsPlugin(t *testing.T) {
 	}
 
 	// Files written
-	skill := filepath.Join(repoRoot, ".agent-pack", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
+	skill := filepath.Join(repoRoot, ".copilot", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
 	body, err := os.ReadFile(skill)
 	if err != nil {
 		t.Fatalf("expected SKILL.md to be written: %v", err)
@@ -111,7 +111,7 @@ func TestVerifyDetectsDrift(t *testing.T) {
 		t.Fatalf("expected clean verify, got %+v", res)
 	}
 	// Modify a file → drift expected.
-	skill := filepath.Join(repoRoot, ".agent-pack", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
+	skill := filepath.Join(repoRoot, ".copilot", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
 	if err := os.WriteFile(skill, []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestRemoveRefusesOnDrift(t *testing.T) {
 	if _, err := ops.Add(context.Background(), AddOptions{RepoRoot: repoRoot, Spec: spec}); err != nil {
 		t.Fatal(err)
 	}
-	skill := filepath.Join(repoRoot, ".agent-pack", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
+	skill := filepath.Join(repoRoot, ".copilot", "plugins", "dotnet-msbuild", "skills", "build-perf", "SKILL.md")
 	if err := os.WriteFile(skill, []byte("tampered"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -7,8 +7,9 @@ dist/
 go.work
 go.work.sum
 
-# Local caches
+# Local caches (legacy v0.2 path retained for users with old worktrees)
 .agent-pack/cache/
+.copilot/cache/
 
 # Editor
 .vscode/

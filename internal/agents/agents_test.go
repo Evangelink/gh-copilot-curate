@@ -10,7 +10,7 @@ import (
 func TestWriteManagedBlockCreatesFile(t *testing.T) {
 	root := t.TempDir()
 	entries := []Entry{
-		{Plugin: "p1", Title: "build-perf", Summary: "Find slow targets.", Link: ".agent-pack/plugins/p1/skills/build-perf/SKILL.md"},
+		{Plugin: "p1", Title: "build-perf", Summary: "Find slow targets.", Link: ".copilot/plugins/p1/skills/build-perf/SKILL.md"},
 	}
 	changed, err := WriteManagedBlock(root, AgentsFile, entries)
 	if err != nil || !changed {
@@ -24,7 +24,7 @@ func TestWriteManagedBlockCreatesFile(t *testing.T) {
 	if !strings.Contains(s, BeginMarker) || !strings.Contains(s, EndMarker) {
 		t.Fatalf("markers missing:\n%s", s)
 	}
-	if !strings.Contains(s, "[build-perf](.agent-pack/plugins/p1/skills/build-perf/SKILL.md)") {
+	if !strings.Contains(s, "[build-perf](.copilot/plugins/p1/skills/build-perf/SKILL.md)") {
 		t.Errorf("expected link in output:\n%s", s)
 	}
 }
@@ -158,7 +158,7 @@ func TestRenderManagedBlockLinkMode(t *testing.T) {
 	root := t.TempDir()
 	entries := []Entry{{
 		Plugin: "p", Title: "T", Summary: "should not appear",
-		Link: ".agent-pack/plugins/p/skills/x/SKILL.md", Mode: "link",
+		Link: ".copilot/plugins/p/skills/x/SKILL.md", Mode: "link",
 	}}
 	if _, err := WriteManagedBlock(root, AgentsFile, entries); err != nil {
 		t.Fatal(err)
@@ -168,14 +168,14 @@ func TestRenderManagedBlockLinkMode(t *testing.T) {
 	if strings.Contains(s, "should not appear") {
 		t.Errorf("link mode leaked summary:\n%s", s)
 	}
-	if !strings.Contains(s, "[T](.agent-pack/plugins/p/skills/x/SKILL.md)") {
+	if !strings.Contains(s, "[T](.copilot/plugins/p/skills/x/SKILL.md)") {
 		t.Errorf("link missing:\n%s", s)
 	}
 }
 
 func TestRenderManagedBlockInlineMode(t *testing.T) {
 	root := t.TempDir()
-	skill := filepath.Join(root, ".agent-pack", "plugins", "p", "skills", "x", "SKILL.md")
+	skill := filepath.Join(root, ".copilot", "plugins", "p", "skills", "x", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestRenderManagedBlockInlineMode(t *testing.T) {
 	}
 	entries := []Entry{{
 		Plugin: "p", Title: "T", Summary: "short",
-		Link:     ".agent-pack/plugins/p/skills/x/SKILL.md",
+		Link:     ".copilot/plugins/p/skills/x/SKILL.md",
 		Mode:     "inline",
 		FullPath: skill,
 	}}

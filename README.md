@@ -8,9 +8,36 @@
 > what your repo declares.
 
 > Modeled on [`gh aw`](https://github.com/githubnext/gh-aw)'s lifecycle.
-> Ships precompiled binaries via `gh extension install`. v0.2.0 is the
-> first release under this name (renamed from `gh-skill-pack` /
-> `gh-skills`).
+> Ships precompiled binaries via `gh extension install`. v0.3.0 introduces
+> a **breaking layout change**: installs now live under `.copilot/` (was
+> `.agent-pack/` in v0.2.x).
+
+## v0.3.0 — breaking change: install path is now `.copilot/`
+
+Starting with **v0.3.0**, `gh-agent-pack` installs plugin content under
+`.copilot/` instead of `.agent-pack/`, aligning with Copilot CLI's own
+`~/.copilot/installed-plugins/...` convention. Layout:
+
+| Old (v0.2.x) | New (v0.3.0+) |
+|---|---|
+| `.agent-pack/manifest.yml` | `.copilot/agent-pack/manifest.yml` |
+| `.agent-pack/manifest.lock.yml` | `.copilot/agent-pack/manifest.lock.yml` |
+| `.agent-pack/plugins/<plugin>/...` | `.copilot/plugins/<plugin>/...` |
+| `.agent-pack/.gitattributes` | `.copilot/.gitattributes` |
+
+**Migrating from v0.2.x**: any mutating command (`init`, `add`, `update`,
+`remove`) will detect a legacy `.agent-pack/` directory and refuse to run
+with an actionable error. Two paths forward:
+
+- **Unmerged install** (simplest): `git rm -rf .agent-pack` (or
+  `Remove-Item .agent-pack -Recurse -Force` on Windows), then
+  `gh agent-pack init && gh agent-pack add ...` again. The AGENTS.md
+  managed block will be regenerated with the new paths.
+- **Already-committed install**: `git mv .agent-pack/manifest.yml
+  .copilot/agent-pack/manifest.yml` (create the parent dir first), delete
+  the rest of `.agent-pack/`, and re-run `gh agent-pack add` with no
+  arguments to regenerate the lock and re-extract plugin content under
+  `.copilot/plugins/`.
 
 ## TL;DR — which tool should I use?
 
@@ -24,7 +51,7 @@
 
 `gh-agent-pack` complements `gh skill` — it does not replace it for
 single-skill installs. The two can coexist in the same repo (different
-on-disk dirs: `.agent-pack/` vs `.agents/skills/`).
+on-disk dirs: `.copilot/plugins/` vs `.agents/skills/`).
 
 > ⚠ **`gh skill` is officially in preview.** Every subcommand is
 > labelled `(preview)` and its help text states it is "subject to
@@ -53,7 +80,7 @@ has at least pointers to it.
 > ⚠ **Honest caveat about cloud-agent discovery.** We *write to*
 > `AGENTS.md` and `.github/copilot-instructions.md` — the files
 > Copilot's cloud agent reads when working on an issue. Whether the
-> cloud agent then *follows the links* into `.agent-pack/...SKILL.md` /
+> cloud agent then *follows the links* into `.copilot/plugins/...SKILL.md` /
 > `.agent.md` is up to the agent's behavior, not something this tool
 > can guarantee. Use `--mode inline` for skills the agent **must** see
 > in full (it embeds the SKILL.md body directly in `AGENTS.md` so no
@@ -84,8 +111,9 @@ gh extension upgrade agent-pack
 ## Quickstart
 
 ```sh
-# 1. Scaffold .agent-pack/, .agent-pack/manifest.yml, AGENTS.md managed
-#    block, and .agent-pack/.gitattributes (non-destructive).
+# 1. Scaffold .copilot/plugins/, .copilot/agent-pack/manifest.yml,
+#    AGENTS.md managed block, and .copilot/.gitattributes
+#    (all non-destructive).
 gh agent-pack init
 
 # 2. Install a plugin from a source repo, pinned to a release tag.
@@ -105,7 +133,7 @@ gh agent-pack list
 gh agent-pack remove dotnet-test
 ```
 
-Commit the resulting `.agent-pack/`, `AGENTS.md`, and (if present)
+Commit the resulting `.copilot/`, `AGENTS.md`, and (if present)
 `.github/copilot-instructions.md`. From that point, every contributor
 and the cloud agent picks them up automatically.
 
@@ -113,7 +141,7 @@ and the cloud agent picks them up automatically.
 
 | Command | What it does |
 |---|---|
-| `gh agent-pack init` | Create `.agent-pack/` scaffolding and AGENTS.md managed block. Non-destructive. |
+| `gh agent-pack init` | Create `.copilot/` scaffolding and AGENTS.md managed block. Non-destructive. |
 | `gh agent-pack add <spec> [flags]` | Install a plugin from a source repo. |
 | `gh agent-pack list` | List installed plugins from the lock file. |
 | `gh agent-pack verify` | Check file hashes + managed-block freshness + manifest/lock consistency. |
@@ -150,10 +178,12 @@ gh agent-pack add my-org/my-skills@v2 --mode inline --yes
 ## Layout
 
 ```
-.agent-pack/
-  manifest.yml              # intent — hand-editable
-  manifest.lock.yml         # generated — do not edit
+.copilot/
   .gitattributes            # `* text eol=lf` — keeps hashes stable across OSes
+                            # (covers both agent-pack/ and plugins/ subtrees)
+  agent-pack/
+    manifest.yml            # intent — hand-editable
+    manifest.lock.yml       # generated — do not edit
   plugins/
     <plugin>/
       skills/<skill>/SKILL.md
@@ -170,7 +200,7 @@ AGENTS.md
 
 ## Manifest schema
 
-### `.agent-pack/manifest.yml` (intent)
+### `.copilot/agent-pack/manifest.yml` (intent)
 
 ```yaml
 version: 1
@@ -183,12 +213,12 @@ plugins:
       mode: summary    # summary | inline | link
 ```
 
-### `.agent-pack/manifest.lock.yml` (generated)
+### `.copilot/agent-pack/manifest.lock.yml` (generated)
 
 ```yaml
 version: 1
 managedBy: gh-agent-pack
-toolVersion: 0.2.0
+toolVersion: 0.3.0
 generatedAt: 2026-05-29T10:00:00Z
 manifestHash: sha256:...
 plugins:
@@ -205,7 +235,7 @@ plugins:
       scope: repo
       mode: summary
     files:
-      - path: .agent-pack/plugins/dotnet-test/skills/run-tests/SKILL.md
+      - path: .copilot/plugins/dotnet-test/skills/run-tests/SKILL.md
         upstreamPath: plugins/dotnet-test/skills/run-tests/SKILL.md
         upstreamHash: sha256:...
         localHash: sha256:...
@@ -225,7 +255,7 @@ managed block into those files based on the install mode:
 | `link` | Just a bullet list of links | Minimal noise; only if you trust the agent to follow links. |
 
 If your cloud agent doesn't reliably follow links into
-`.agent-pack/...`, prefer `inline` for skills that must always be
+`.copilot/plugins/...`, prefer `inline` for skills that must always be
 applied.
 
 ## Security model
@@ -235,7 +265,7 @@ applied.
 - **Symlinks and hardlinks in tarballs are rejected** to avoid host-symlink path-traversal vectors.
 - **Tarball caps.** Extraction is bounded to 5,000 files, 25 MB per file, and 200 MB total to defend against compression bombs.
 - **Pin to tags.** `gh-agent-pack` warns when you install from a branch ref (mutable). Prefer `@v1.0.0` or a commit SHA.
-- **Lock-file paths are validated** on every read so a malicious checked-in lock cannot redirect writes outside `.agent-pack/`.
+- **Lock-file paths are validated** on every read so a malicious checked-in lock cannot redirect writes outside `.copilot/`.
 - **Atomic writes** via `os.CreateTemp` in the target directory + rename, so a crashed install never leaves a half-written file in place of a good one.
 - **Provenance in lock.** The resolved commit SHA and upstream hash for every file are recorded so `gh agent-pack verify` can detect tampering or drift.
 

@@ -7,7 +7,7 @@
 //
 // TODO(v1.1): Add/Update perform per-file writes interleaved with manifest
 // and lock updates. A failure partway through can leave orphaned files
-// under .agent-pack/plugins/<id>/ without a corresponding lock entry. We
+// under .copilot/plugins/<id>/ without a corresponding lock entry. We
 // considered staging into a temp tree and committing atomically; for v1 the
 // recovery path is "re-run `gh agent-pack add` / `gh agent-pack update` to reach a
 // consistent state, or delete the orphaned directory by hand". Track in
@@ -151,7 +151,7 @@ func (ops *Operations) Add(ctx context.Context, opts AddOptions) (*AddResult, er
 	}
 
 	if err := EnsurePackGitAttributes(opts.RepoRoot); err != nil {
-		return res, fmt.Errorf("write .agent-pack/.gitattributes: %w", err)
+		return res, fmt.Errorf("write .copilot/.gitattributes: %w", err)
 	}
 	if err := manifest.SaveManifest(opts.RepoRoot, mf); err != nil {
 		return res, fmt.Errorf("save manifest: %w", err)
@@ -320,7 +320,7 @@ func (ops *Operations) Remove(opts RemoveOptions) (*RemoveResult, error) {
 			return res, err
 		}
 	}
-	pruneEmptyDirs(filepath.Join(opts.RepoRoot, manifest.PackDir, "plugins", opts.PluginName))
+	pruneEmptyDirs(filepath.Join(opts.RepoRoot, manifest.PluginsDir, opts.PluginName))
 
 	mf.Remove(opts.PluginName)
 	lock.Remove(opts.PluginName)
@@ -634,13 +634,15 @@ func safeLockPath(repoRoot, lockRel string) string {
 	return filepath.Join(repoRoot, filepath.FromSlash(lockRel))
 }
 
-// EnsurePackGitAttributes writes .agent-pack/.gitattributes with
-// `* text eol=lf` so files under .agent-pack/ keep stable byte content across
+// EnsurePackGitAttributes writes .copilot/.gitattributes with
+// `* text eol=lf` so files under .copilot/ keep stable byte content across
 // clones with core.autocrlf enabled. Without this, localHash comparison in
-// verify produces spurious drift after a Windows checkout. Idempotent: the
-// file is only written if absent or its content differs.
+// verify produces spurious drift after a Windows checkout. The file is
+// placed at the .copilot/ root so it covers both .copilot/agent-pack/ (lock,
+// manifest) and .copilot/plugins/<plugin>/... installed content.
+// Idempotent: the file is only written if absent or its content differs.
 func EnsurePackGitAttributes(repoRoot string) error {
-	rel := filepath.Join(manifest.PackDir, ".gitattributes")
+	rel := filepath.Join(manifest.PackRoot, ".gitattributes")
 	full := filepath.Join(repoRoot, rel)
 	want := []byte("# managed by gh-agent-pack: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
 	existing, err := os.ReadFile(full)
@@ -668,4 +670,29 @@ func pruneEmptyDirs(dir string) {
 func hashBytes(b []byte) string {
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// CheckNoLegacyLayout returns a descriptive error if the target repo still
+// contains a v0.2.x install at .agent-pack/. v0.3.0 moved installs to
+// .copilot/; running v0.3 against a v0.2 layout would silently create a
+// parallel install and leave AGENTS.md links inconsistent.
+//
+// Callers should invoke this from any mutating command (init, add, update,
+// remove) before performing IO. Verify/list are intentionally exempt so
+// users can still inspect a legacy install.
+func CheckNoLegacyLayout(repoRoot string) error {
+	legacy := filepath.Join(repoRoot, manifest.LegacyPackRoot)
+	if _, err := os.Stat(legacy); err != nil {
+		return nil
+	}
+	return fmt.Errorf("this repository uses the v0.2 layout at %s/; v0.3 installs to %s/.\n"+
+		"To migrate, either:\n"+
+		"  1. (Recommended for unmerged installs) Delete %s/ and re-run:\n"+
+		"       gh agent-pack init && gh agent-pack add <owner/repo>[@ref]\n"+
+		"  2. Move %s/manifest.yml to %s and delete %s/.\n"+
+		"     Then run `gh agent-pack add` (no args) to re-resolve the lock.\n"+
+		"AGENTS.md / .github/copilot-instructions.md managed blocks will be regenerated automatically.",
+		manifest.LegacyPackRoot, manifest.PackRoot,
+		manifest.LegacyPackRoot,
+		manifest.LegacyPackRoot, manifest.ManifestPath, manifest.LegacyPackRoot)
 }

@@ -33,6 +33,9 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := skills.CheckNoLegacyLayout(root); err != nil {
+				return err
+			}
 			spec, err := source.ParseSpec(args[0])
 			if err != nil {
 				return err

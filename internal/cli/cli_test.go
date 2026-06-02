@@ -23,7 +23,7 @@ func TestInitCreatesSkillsScaffold(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("init: %v\n%s", err, out.String())
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-pack", "manifest.yml")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".copilot", "agent-pack", "manifest.yml")); err != nil {
 		t.Errorf("manifest not created: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -41,10 +41,10 @@ func TestInitIsNonDestructive(t *testing.T) {
 		t.Fatal(err)
 	}
 	pre := []byte("# my manifest\nplugins: []\n")
-	if err := os.MkdirAll(filepath.Join(root, ".agent-pack"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".copilot", "agent-pack"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-pack", "manifest.yml"), pre, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".copilot", "agent-pack", "manifest.yml"), pre, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := NewRootCmd("test")
@@ -54,7 +54,7 @@ func TestInitIsNonDestructive(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := os.ReadFile(filepath.Join(root, ".agent-pack", "manifest.yml"))
+	got, _ := os.ReadFile(filepath.Join(root, ".copilot", "agent-pack", "manifest.yml"))
 	if !bytes.Equal(got, pre) {
 		t.Errorf("manifest was rewritten:\n%s", got)
 	}
@@ -107,5 +107,29 @@ func TestAddRejectsBadSpec(t *testing.T) {
 	cmd.SetArgs([]string{"add", "not-a-spec", "--root", root, "--yes"})
 	if err := cmd.Execute(); err == nil {
 		t.Errorf("expected error for bad spec")
+	}
+}
+
+// TestInitRejectsLegacyLayout verifies v0.3 emits a clear migration error
+// when the target repo still has a v0.2 .agent-pack/ directory.
+func TestInitRejectsLegacyLayout(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".agent-pack"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := &bytes.Buffer{}
+	cmd := NewRootCmd("test")
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"init", "--root", root})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected error for legacy layout, got nil; output:\n%s", out.String())
+	}
+	if !strings.Contains(err.Error(), ".copilot") || !strings.Contains(err.Error(), "v0.2") {
+		t.Errorf("error should mention .copilot and v0.2 migration: %v", err)
 	}
 }

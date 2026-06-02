@@ -1,2 +1,2 @@
 # Mark generated artifacts so GitHub treats them appropriately in diffs and language stats.
-.agent-pack/manifest.lock.yml linguist-generated=true
+.copilot/agent-pack/manifest.lock.yml linguist-generated=true

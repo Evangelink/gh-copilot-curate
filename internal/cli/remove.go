@@ -21,6 +21,9 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := skills.CheckNoLegacyLayout(root); err != nil {
+				return err
+			}
 			ops := &skills.Operations{}
 			res, err := ops.Remove(skills.RemoveOptions{
 				RepoRoot: root, PluginName: args[0], Force: force, DryRun: dryRun,

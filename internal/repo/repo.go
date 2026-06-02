@@ -14,10 +14,15 @@ import (
 // FindRoot resolves a repo root, preferring `git rev-parse --show-toplevel`
 // so that we always install into the actual Git repository root rather than
 // the nearest package marker (which can land inside a sub-package of a
-// monorepo). Falls back to a marker walk (.agent-pack, AGENTS.md, .git, go.mod,
-// package.json) when Git is unavailable or the directory is not in a repo.
-// If nothing matches, returns start with an error so callers (notably
-// `init`) can choose to proceed with the current directory.
+// monorepo). Falls back to a marker walk (.copilot/agent-pack, .agent-pack,
+// AGENTS.md, .git, go.mod, package.json) when Git is unavailable or the
+// directory is not in a repo. (.agent-pack is the legacy v0.2 layout; we
+// still detect it so users on the old layout can run commands that emit
+// the migration error. We deliberately do NOT treat bare .copilot/ as a
+// marker because Copilot CLI uses ~/.copilot/ for user state, which would
+// cause us to mis-detect HOME as a repo root.) If nothing matches, returns
+// start with an error so callers (notably `init`) can choose to proceed
+// with the current directory.
 func FindRoot(start string) (root string, found bool, err error) {
 	abs, err := filepath.Abs(start)
 	if err != nil {
@@ -28,7 +33,14 @@ func FindRoot(start string) (root string, found bool, err error) {
 	}
 	dir := abs
 	for {
-		for _, marker := range []string{".agent-pack", ".git", "AGENTS.md", "go.mod", "package.json"} {
+		for _, marker := range []string{
+			filepath.Join(".copilot", "agent-pack"),
+			".agent-pack",
+			".git",
+			"AGENTS.md",
+			"go.mod",
+			"package.json",
+		} {
 			if _, statErr := os.Stat(filepath.Join(dir, marker)); statErr == nil {
 				return dir, true, nil
 			}
