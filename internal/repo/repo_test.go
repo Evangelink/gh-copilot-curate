@@ -39,7 +39,7 @@ func TestMustCleanRelRejectsEscape(t *testing.T) {
 	if _, err := MustCleanRel(root, "../escape.txt"); err == nil {
 		t.Errorf("expected escape rejection")
 	}
-	if _, err := MustCleanRel(root, ".copilot/agent-pack/manifest.yml"); err != nil {
+	if _, err := MustCleanRel(root, ".copilot/curate/manifest.yml"); err != nil {
 		t.Errorf("ok path rejected: %v", err)
 	}
 }

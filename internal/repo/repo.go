@@ -14,13 +14,15 @@ import (
 // FindRoot resolves a repo root, preferring `git rev-parse --show-toplevel`
 // so that we always install into the actual Git repository root rather than
 // the nearest package marker (which can land inside a sub-package of a
-// monorepo). Falls back to a marker walk (.copilot/agent-pack, .agent-pack,
-// AGENTS.md, .git, go.mod, package.json) when Git is unavailable or the
-// directory is not in a repo. (.agent-pack is the legacy v0.2 layout; we
-// still detect it so users on the old layout can run commands that emit
-// the migration error. We deliberately do NOT treat bare .copilot/ as a
-// marker because Copilot CLI uses ~/.copilot/ for user state, which would
-// cause us to mis-detect HOME as a repo root.) If nothing matches, returns
+// monorepo). Falls back to a marker walk (.copilot/curate,
+// .copilot/agent-pack, .agent-pack, AGENTS.md, .git, go.mod, package.json)
+// when Git is unavailable or the directory is not in a repo.
+// (.copilot/agent-pack is the legacy v0.3 layout from when this tool was
+// named gh-agent-pack; .agent-pack is the v0.2 layout. We still detect
+// them so users on the old layout can run commands that emit the migration
+// error. We deliberately do NOT treat bare .copilot/ as a marker because
+// Copilot CLI uses ~/.copilot/ for user state, which would cause us to
+// mis-detect HOME as a repo root.) If nothing matches, returns
 // start with an error so callers (notably `init`) can choose to proceed
 // with the current directory.
 func FindRoot(start string) (root string, found bool, err error) {
@@ -34,6 +36,7 @@ func FindRoot(start string) (root string, found bool, err error) {
 	dir := abs
 	for {
 		for _, marker := range []string{
+			filepath.Join(".copilot", "curate"),
 			filepath.Join(".copilot", "agent-pack"),
 			".agent-pack",
 			".git",

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Evangelink/gh-agent-pack/internal/manifest"
+	"github.com/Evangelink/gh-copilot-curate/internal/manifest"
 )
 
 func newListCmd() *cobra.Command {
@@ -23,7 +23,7 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 			if len(lock.Plugins) == 0 {
-				fprintln(cmd.OutOrStdout(), "No plugins installed. Run `gh agent-pack add <owner/repo>` to install one.")
+				fprintln(cmd.OutOrStdout(), "No plugins installed. Run `gh copilot-curate add <owner/repo>` to install one.")
 				return nil
 			}
 			out := cmd.OutOrStdout()

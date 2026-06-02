@@ -1,5 +1,5 @@
 // Package layout translates an upstream source tree into the canonical
-// gh-agent-pack on-disk format under .copilot/plugins/<plugin>/...
+// gh-copilot-curate on-disk format under .copilot/plugins/<plugin>/...
 //
 // v1 supports two layouts:
 //
@@ -25,7 +25,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Evangelink/gh-agent-pack/internal/manifest"
+	"github.com/Evangelink/gh-copilot-curate/internal/manifest"
 )
 
 // Kind identifies a detected layout.
@@ -37,7 +37,7 @@ const (
 	KindHeuristic    Kind = "heuristic"
 )
 
-// Plugin is a logical bundle of skills+agents+scripts that gh-agent-pack installs
+// Plugin is a logical bundle of skills+agents+scripts that gh-copilot-curate installs
 // as a unit under .copilot/plugins/<Name>/.
 type Plugin struct {
 	Name  string  // canonical plugin id (kebab-case)

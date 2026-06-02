@@ -1,6 +1,6 @@
-# gh-agent-pack
+# gh-copilot-curate
 
-> **A repo-scoped agent pack manager.** Installs whole *plugin bundles*
+> **A repo-scoped Copilot context curator.** Installs whole *plugin bundles*
 > (SKILL.md files + `.agent.md` sub-agents + supporting scripts) from a
 > source repo into your target repo, tracks them in a committed manifest,
 > and surfaces them in `AGENTS.md` / `.github/copilot-instructions.md` so
@@ -8,48 +8,60 @@
 > what your repo declares.
 
 > Modeled on [`gh aw`](https://github.com/githubnext/gh-aw)'s lifecycle.
-> Ships precompiled binaries via `gh extension install`. v0.3.0 introduces
-> a **breaking layout change**: installs now live under `.copilot/` (was
-> `.agent-pack/` in v0.2.x).
+> Ships precompiled binaries via `gh extension install`. v0.4.0 introduces
+> a **breaking rename**: the extension is now `gh copilot-curate` (was
+> `gh agent-pack`) and the tool-state dir moved from
+> `.copilot/agent-pack/` to `.copilot/curate/`. See migration notes below.
+
+## v0.4.0 — breaking change: tool renamed to `gh copilot-curate`
+
+The extension was renamed from `gh-agent-pack` → `gh-copilot-curate` to
+reflect its broader scope (skills, agents, and — coming soon — prompts and
+instructions). The on-disk tool-state dir moved correspondingly:
+
+| Old (v0.3.x) | New (v0.4.0+) |
+|---|---|
+| `gh agent-pack ...` | `gh copilot-curate ...` |
+| `.copilot/agent-pack/manifest.yml` | `.copilot/curate/manifest.yml` |
+| `.copilot/agent-pack/manifest.lock.yml` | `.copilot/curate/manifest.lock.yml` |
+| `<!-- BEGIN gh-agent-pack managed -->` | `<!-- BEGIN gh-copilot-curate managed -->` |
+
+Plugin content under `.copilot/plugins/<plugin>/` is unchanged.
+
+**Migrating from v0.3.x**: any mutating command (`init`, `add`, `update`,
+`remove`) detects a legacy `.copilot/agent-pack/` directory and refuses
+to run with an actionable error. Two paths:
+
+- **Unmerged install** (simplest): `git rm -rf .copilot` (or
+  `Remove-Item .copilot -Recurse -Force` on Windows), then
+  `gh copilot-curate init && gh copilot-curate add ...` again. The AGENTS.md
+  managed block will be regenerated with the new markers.
+- **Already-committed install**: `git mv .copilot/agent-pack/manifest.yml
+  .copilot/curate/manifest.yml` (create the parent dir first), delete the
+  rest of `.copilot/agent-pack/`, and re-run `gh copilot-curate add` with
+  no arguments to regenerate the lock under the new path. Then re-install
+  the extension as `gh extension remove agent-pack && gh extension install
+  Evangelink/gh-copilot-curate`.
 
 ## v0.3.0 — breaking change: install path is now `.copilot/`
 
-Starting with **v0.3.0**, `gh-agent-pack` installs plugin content under
-`.copilot/` instead of `.agent-pack/`, aligning with Copilot CLI's own
-`~/.copilot/installed-plugins/...` convention. Layout:
-
-| Old (v0.2.x) | New (v0.3.0+) |
-|---|---|
-| `.agent-pack/manifest.yml` | `.copilot/agent-pack/manifest.yml` |
-| `.agent-pack/manifest.lock.yml` | `.copilot/agent-pack/manifest.lock.yml` |
-| `.agent-pack/plugins/<plugin>/...` | `.copilot/plugins/<plugin>/...` |
-| `.agent-pack/.gitattributes` | `.copilot/.gitattributes` |
-
-**Migrating from v0.2.x**: any mutating command (`init`, `add`, `update`,
-`remove`) will detect a legacy `.agent-pack/` directory and refuse to run
-with an actionable error. Two paths forward:
-
-- **Unmerged install** (simplest): `git rm -rf .agent-pack` (or
-  `Remove-Item .agent-pack -Recurse -Force` on Windows), then
-  `gh agent-pack init && gh agent-pack add ...` again. The AGENTS.md
-  managed block will be regenerated with the new paths.
-- **Already-committed install**: `git mv .agent-pack/manifest.yml
-  .copilot/agent-pack/manifest.yml` (create the parent dir first), delete
-  the rest of `.agent-pack/`, and re-run `gh agent-pack add` with no
-  arguments to regenerate the lock and re-extract plugin content under
-  `.copilot/plugins/`.
+In **v0.3.0**, installs moved from `.agent-pack/` (v0.2.x) to `.copilot/`
+to align with Copilot CLI's own `~/.copilot/installed-plugins/...`
+convention. v0.4+ still detects and refuses to run against a stale
+`.agent-pack/` layout — follow the same two-path migration above but
+delete `.agent-pack/` instead of `.copilot/agent-pack/`.
 
 ## TL;DR — which tool should I use?
 
 | You want to… | Use |
 |---|---|
 | Install one or two SKILL.md skills onto your local machine | **Built-in [`gh skill`](https://cli.github.com/manual/gh_skill) (GitHub CLI 2.92+, ⚠ preview).** Official, supports per-agent dirs, has search and a public catalogue. |
-| Commit a SKILL.md skill into your repo so every contributor and `@copilot` see it | Either tool works. `gh-agent-pack` adds the AGENTS.md managed block and a manifest. |
-| Install a whole *plugin bundle* (skills + agents + scripts) from a repo like [`dotnet/skills`](https://github.com/dotnet/skills) | **`gh-agent-pack`.** The built-in installs one SKILL.md at a time and ignores `.agent.md` files. |
-| Install / update `.agent.md` sub-agent definitions | **`gh-agent-pack`.** The built-in has no concept of agents. |
-| Drift-detect your repo's pack state in CI | **`gh-agent-pack verify`.** |
+| Commit a SKILL.md skill into your repo so every contributor and `@copilot` see it | Either tool works. `gh-copilot-curate` adds the AGENTS.md managed block and a manifest. |
+| Install a whole *plugin bundle* (skills + agents + scripts) from a repo like [`dotnet/skills`](https://github.com/dotnet/skills) | **`gh-copilot-curate`.** The built-in installs one SKILL.md at a time and ignores `.agent.md` files. |
+| Install / update `.agent.md` sub-agent definitions | **`gh-copilot-curate`.** The built-in has no concept of agents. |
+| Drift-detect your repo's pack state in CI | **`gh-copilot-curate verify`.** |
 
-`gh-agent-pack` complements `gh skill` — it does not replace it for
+`gh-copilot-curate` complements `gh skill` — it does not replace it for
 single-skill installs. The two can coexist in the same repo (different
 on-disk dirs: `.copilot/plugins/` vs `.agents/skills/`).
 
@@ -71,7 +83,7 @@ on-disk dirs: `.copilot/plugins/` vs `.agents/skills/`).
   skills + `.agent.md` agents + scripts under a single plugin id — and
   no tool currently installs the bundle as a unit.
 
-`gh-agent-pack` fills those gaps: one command installs a whole plugin
+`gh-copilot-curate` fills those gaps: one command installs a whole plugin
 into your repo, the manifest tells everyone what's pinned, and the
 managed block in `AGENTS.md` surfaces the bundle so any agent that reads
 that file (Copilot cloud agent, Claude Code, Cursor in repo mode, etc.)
@@ -89,48 +101,48 @@ has at least pointers to it.
 ## Prerequisites
 
 - [GitHub CLI](https://cli.github.com/) installed and authenticated
-  (`gh auth login`). `gh agent-pack add` / `update` use your
+  (`gh auth login`). `gh copilot-curate add` / `update` use your
   `gh auth token` to fetch source-repo tarballs from GitHub. Private
   repos require an account with read access.
-- `git` on PATH (`gh agent-pack init` and other commands prefer
+- `git` on PATH (`gh copilot-curate init` and other commands prefer
   `git rev-parse --show-toplevel` for repo-root detection, with a
   marker-walk fallback).
 
 ## Install
 
 ```sh
-gh extension install Evangelink/gh-agent-pack
+gh extension install Evangelink/gh-copilot-curate
 ```
 
 Upgrade later with:
 
 ```sh
-gh extension upgrade agent-pack
+gh extension upgrade copilot-curate
 ```
 
 ## Quickstart
 
 ```sh
-# 1. Scaffold .copilot/plugins/, .copilot/agent-pack/manifest.yml,
+# 1. Scaffold .copilot/plugins/, .copilot/curate/manifest.yml,
 #    AGENTS.md managed block, and .copilot/.gitattributes
 #    (all non-destructive).
-gh agent-pack init
+gh copilot-curate init
 
 # 2. Install a plugin from a source repo, pinned to a release tag.
 #    This pulls the entire plugin: skills + .agent.md files + scripts.
-gh agent-pack add dotnet/skills@v1.0.0 --plugin dotnet-test --yes
+gh copilot-curate add dotnet/skills@v1.0.0 --plugin dotnet-test --yes
 
 # 3. Check for drift later.
-gh agent-pack verify
+gh copilot-curate verify
 
 # 4. Update everything to the latest pinned refs.
-gh agent-pack update
+gh copilot-curate update
 
 # 5. List what's installed.
-gh agent-pack list
+gh copilot-curate list
 
 # 6. Remove a plugin.
-gh agent-pack remove dotnet-test
+gh copilot-curate remove dotnet-test
 ```
 
 Commit the resulting `.copilot/`, `AGENTS.md`, and (if present)
@@ -141,17 +153,17 @@ and the cloud agent picks them up automatically.
 
 | Command | What it does |
 |---|---|
-| `gh agent-pack init` | Create `.copilot/` scaffolding and AGENTS.md managed block. Non-destructive. |
-| `gh agent-pack add <spec> [flags]` | Install a plugin from a source repo. |
-| `gh agent-pack list` | List installed plugins from the lock file. |
-| `gh agent-pack verify` | Check file hashes + managed-block freshness + manifest/lock consistency. |
-| `gh agent-pack remove <plugin>` | Remove a plugin. Refuses on local edits unless `--force`. |
-| `gh agent-pack update [plugin]…` | Re-resolve refs and re-install. Refuses on drift unless `--force`. |
+| `gh copilot-curate init` | Create `.copilot/` scaffolding and AGENTS.md managed block. Non-destructive. |
+| `gh copilot-curate add <spec> [flags]` | Install a plugin from a source repo. |
+| `gh copilot-curate list` | List installed plugins from the lock file. |
+| `gh copilot-curate verify` | Check file hashes + managed-block freshness + manifest/lock consistency. |
+| `gh copilot-curate remove <plugin>` | Remove a plugin. Refuses on local edits unless `--force`. |
+| `gh copilot-curate update [plugin]…` | Re-resolve refs and re-install. Refuses on drift unless `--force`. |
 
-### `gh agent-pack add`
+### `gh copilot-curate add`
 
 ```
-gh agent-pack add <owner>/<repo>[@<ref>] [flags]
+gh copilot-curate add <owner>/<repo>[@<ref>] [flags]
 
   --plugin NAME       Override plugin id (default: derived from repo)
   --include GLOB,...  Only copy files matching these globs (path/Match syntax,
@@ -165,14 +177,14 @@ Examples:
 
 ```sh
 # Install the full dotnet-test plugin (22 skills + 11 agents + scripts).
-gh agent-pack add dotnet/skills@v1.0.0 --plugin dotnet-test --yes
+gh copilot-curate add dotnet/skills@v1.0.0 --plugin dotnet-test --yes
 
 # Install only the build-perf skill from the dotnet-msbuild plugin.
-gh agent-pack add dotnet/skills@main --plugin dotnet-msbuild \
+gh copilot-curate add dotnet/skills@main --plugin dotnet-msbuild \
   --include "skills/build-perf/**"
 
 # Pin and inline a critical skill so its SKILL.md body lands in AGENTS.md.
-gh agent-pack add my-org/my-skills@v2 --mode inline --yes
+gh copilot-curate add my-org/my-skills@v2 --mode inline --yes
 ```
 
 ## Layout
@@ -180,8 +192,8 @@ gh agent-pack add my-org/my-skills@v2 --mode inline --yes
 ```
 .copilot/
   .gitattributes            # `* text eol=lf` — keeps hashes stable across OSes
-                            # (covers both agent-pack/ and plugins/ subtrees)
-  agent-pack/
+                            # (covers both curate/ and plugins/ subtrees)
+  curate/
     manifest.yml            # intent — hand-editable
     manifest.lock.yml       # generated — do not edit
   plugins/
@@ -191,16 +203,16 @@ gh agent-pack add my-org/my-skills@v2 --mode inline --yes
       agents/<agent>.agent.md
 AGENTS.md
   # ...your existing content...
-  <!-- BEGIN gh-agent-pack managed -->
-  ## Available skills (managed by gh-agent-pack — do not edit by hand)
+  <!-- BEGIN gh-copilot-curate managed -->
+  ## Available skills (managed by gh-copilot-curate — do not edit by hand)
   ...summary entries...
-  <!-- END gh-agent-pack managed -->
+  <!-- END gh-copilot-curate managed -->
 .github/copilot-instructions.md   # optional — same managed block
 ```
 
 ## Manifest schema
 
-### `.copilot/agent-pack/manifest.yml` (intent)
+### `.copilot/curate/manifest.yml` (intent)
 
 ```yaml
 version: 1
@@ -213,11 +225,11 @@ plugins:
       mode: summary    # summary | inline | link
 ```
 
-### `.copilot/agent-pack/manifest.lock.yml` (generated)
+### `.copilot/curate/manifest.lock.yml` (generated)
 
 ```yaml
 version: 1
-managedBy: gh-agent-pack
+managedBy: gh-copilot-curate
 toolVersion: 0.3.0
 generatedAt: 2026-05-29T10:00:00Z
 manifestHash: sha256:...
@@ -245,7 +257,7 @@ plugins:
 ## Cloud-agent integration modes
 
 The Copilot **cloud agent** (and any contributor) reads `AGENTS.md` and
-`.github/copilot-instructions.md`. `gh-agent-pack` writes a single
+`.github/copilot-instructions.md`. `gh-copilot-curate` writes a single
 managed block into those files based on the install mode:
 
 | Mode | What lands in AGENTS.md | When to use |
@@ -260,18 +272,18 @@ applied.
 
 ## Security model
 
-- **No script execution.** `gh-agent-pack` never runs anything it installs.
+- **No script execution.** `gh-copilot-curate` never runs anything it installs.
 - **Path-traversal rejection.** All entries are validated against the repo root before any IO. Tarball entries with absolute, drive-qualified, or `..` paths are refused, and we verify each resolved target lives under the destination via `filepath.Rel`.
 - **Symlinks and hardlinks in tarballs are rejected** to avoid host-symlink path-traversal vectors.
 - **Tarball caps.** Extraction is bounded to 5,000 files, 25 MB per file, and 200 MB total to defend against compression bombs.
-- **Pin to tags.** `gh-agent-pack` warns when you install from a branch ref (mutable). Prefer `@v1.0.0` or a commit SHA.
+- **Pin to tags.** `gh-copilot-curate` warns when you install from a branch ref (mutable). Prefer `@v1.0.0` or a commit SHA.
 - **Lock-file paths are validated** on every read so a malicious checked-in lock cannot redirect writes outside `.copilot/`.
 - **Atomic writes** via `os.CreateTemp` in the target directory + rename, so a crashed install never leaves a half-written file in place of a good one.
-- **Provenance in lock.** The resolved commit SHA and upstream hash for every file are recorded so `gh agent-pack verify` can detect tampering or drift.
+- **Provenance in lock.** The resolved commit SHA and upstream hash for every file are recorded so `gh copilot-curate verify` can detect tampering or drift.
 
 ## Comparison with related tooling
 
-| | `/plugin install` | `gh skill install` (built-in 2.92+, ⚠ preview) | `gh agent-pack add` |
+| | `/plugin install` | `gh skill install` (built-in 2.92+, ⚠ preview) | `gh copilot-curate add` |
 |---|---|---|---|
 | Default scope | User machine | User machine (`--scope=project` commits to repo) | Repository (always commits) |
 | Surfaces in AGENTS.md for the cloud agent | ❌ | ❌ | ✅ |
@@ -280,15 +292,15 @@ applied.
 | Single committed manifest / lock | ❌ | ❌ (state lives in per-skill frontmatter) | ✅ |
 | Plugin-bundle install (skills + agents + scripts in one go) | ❌ | ❌ (one skill at a time) | ✅ |
 | Handles `.agent.md` sub-agent files | ❌ | ❌ | ✅ |
-| Drift detection in CI | ❌ | ❌ | ✅ `gh agent-pack verify` |
+| Drift detection in CI | ❌ | ❌ | ✅ `gh copilot-curate verify` |
 | Public catalogue / search | ❌ | ✅ | ❌ |
 | Preserves plugin namespace on disk | n/a | ❌ (flattens — `dotnet-test/foo` → `.agents/skills/foo/`) | ✅ |
 
 ## Development
 
 ```sh
-git clone https://github.com/Evangelink/gh-agent-pack
-cd gh-agent-pack
+git clone https://github.com/Evangelink/gh-copilot-curate
+cd gh-copilot-curate
 go build ./...
 go test ./...
 ```
@@ -296,18 +308,18 @@ go test ./...
 Install your local build into `gh`:
 
 ```sh
-# produces ./gh-agent-pack (or gh-agent-pack.exe on Windows)
-go build -o gh-agent-pack .          # use gh-agent-pack.exe on Windows
+# produces ./gh-copilot-curate (or gh-copilot-curate.exe on Windows)
+go build -o gh-copilot-curate .          # use gh-copilot-curate.exe on Windows
 gh extension install .
-gh agent-pack --help
+gh copilot-curate --help
 ```
 
 ## Roadmap (v0.3+)
 
-- Real 3-way merge on `gh agent-pack update` (fetch BASE by SHA, cache)
+- Real 3-way merge on `gh copilot-curate update` (fetch BASE by SHA, cache)
 - `--scope=user` with host detection (Copilot CLI / Claude / Cursor / VS Code) — interop with built-in `gh skill`'s per-agent dirs
 - `agentskills.io` standard layout support
-- `gh agent-pack sync` to reconcile from hand-edited manifest
+- `gh copilot-curate sync` to reconcile from hand-edited manifest
 - URL specs (`https://github.com/.../blob/...`) and local specs (`./path`)
 - Signature/provenance verification
 - Private-repo auth, rate-limit handling

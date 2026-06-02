@@ -1,4 +1,4 @@
-module github.com/Evangelink/gh-agent-pack
+module github.com/Evangelink/gh-copilot-curate
 
 go 1.23
 

@@ -82,7 +82,7 @@ type HTTPFetcher struct {
 func NewHTTPFetcher() *HTTPFetcher {
 	return &HTTPFetcher{
 		Client:    &http.Client{Timeout: 60 * time.Second},
-		UserAgent: "gh-agent-pack",
+		UserAgent: "gh-copilot-curate",
 	}
 }
 

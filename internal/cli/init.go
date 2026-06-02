@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Evangelink/gh-agent-pack/internal/agents"
-	"github.com/Evangelink/gh-agent-pack/internal/manifest"
-	"github.com/Evangelink/gh-agent-pack/internal/skills"
+	"github.com/Evangelink/gh-copilot-curate/internal/agents"
+	"github.com/Evangelink/gh-copilot-curate/internal/manifest"
+	"github.com/Evangelink/gh-copilot-curate/internal/skills"
 )
 
 func newInitCmd() *cobra.Command {
@@ -52,7 +52,7 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 			fprintln(cmd.OutOrStdout(), "managed block ready in", agents.AgentsFile)
-			fprintln(cmd.OutOrStdout(), "\nNext: gh agent-pack add <owner/repo>[@ref]")
+			fprintln(cmd.OutOrStdout(), "\nNext: gh copilot-curate add <owner/repo>[@ref]")
 			return nil
 		},
 	}
