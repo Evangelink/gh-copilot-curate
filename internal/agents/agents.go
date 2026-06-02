@@ -1,10 +1,23 @@
-// Package agents writes the gh-copilot-curate managed block into AGENTS.md and
-// .github/copilot-instructions.md, and extracts skill summaries from
-// installed SKILL.md / .agent.md files.
+// Package agents writes the gh-copilot-curate managed content into two
+// places, and extracts skill summaries from installed SKILL.md / .agent.md
+// files:
 //
-// The managed block is delimited by HTML comment markers so it can be
-// rewritten idempotently without touching user-authored content. Anything
-// outside the markers is preserved verbatim.
+//   - AGENTS.md (at repo root) — fence-delimited managed block that coexists
+//     with hand-authored agent guidance.
+//   - .github/instructions/copilot-curate.instructions.md — full file owned
+//     entirely by gh-copilot-curate, carrying the same skill inventory with
+//     a YAML front-matter (`applyTo: "**"`) so GitHub Copilot picks it up as
+//     a path-specific custom-instructions file.
+//
+// The AGENTS.md managed block is delimited by HTML comment markers so it
+// can be rewritten idempotently without touching user-authored content;
+// anything outside the markers is preserved verbatim. The instructions
+// file is rewritten wholesale.
+//
+// Versions ≤ v0.4.x wrote a managed block into .github/copilot-instructions.md
+// (LegacyCopilotInstFile). v0.5+ migrates away from that file because it is
+// shared with hand-authored repo-wide instructions; the named path-specific
+// file gives the tool exclusive ownership.
 package agents
 
 import (
@@ -22,8 +35,18 @@ const (
 	BeginMarker = "<!-- BEGIN gh-copilot-curate managed -->"
 	EndMarker   = "<!-- END gh-copilot-curate managed -->"
 
-	AgentsFile      = "AGENTS.md"
-	CopilotInstFile = ".github/copilot-instructions.md"
+	AgentsFile = "AGENTS.md"
+	// InstructionsFile is the path-specific custom-instructions file
+	// gh-copilot-curate owns wholesale from v0.5+. Lives under
+	// .github/instructions/ so it is picked up by Copilot CLI, all cloud
+	// agents, and code review (per the GitHub support matrix).
+	InstructionsFile = ".github/instructions/copilot-curate.instructions.md"
+	// LegacyCopilotInstFile is the repo-wide instructions file v0.4.x and
+	// earlier wrote a managed block into. v0.5+ mutating commands remove
+	// the managed block (and the file itself if it is otherwise empty) so
+	// the new InstructionsFile is the only place curate-managed content
+	// lives outside AGENTS.md.
+	LegacyCopilotInstFile = ".github/copilot-instructions.md"
 )
 
 // Entry is one row in the managed block.
@@ -43,8 +66,10 @@ type Entry struct {
 	FullPath string
 }
 
-// WriteManagedBlock rewrites the managed block in the given file (creating
-// the file if it does not yet exist). Returns true if the file changed.
+// WriteManagedBlock rewrites the AGENTS.md managed block in the given file
+// (creating the file if it does not yet exist). Returns true if the file
+// changed. The block is fence-delimited so it coexists with user content
+// outside the markers.
 func WriteManagedBlock(repoRoot, relPath string, entries []Entry) (changed bool, err error) {
 	full := filepath.Join(repoRoot, filepath.FromSlash(relPath))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -62,29 +87,98 @@ func WriteManagedBlock(repoRoot, relPath string, entries []Entry) (changed bool,
 	if bytesEqualEOLAware(existing, updated) {
 		return false, nil
 	}
-	// Use a randomized temp name in the same dir so a pre-existing symlink
-	// at a predictable path can't be used as a write-redirect.
+	return true, writeFileAtomic(full, updated)
+}
+
+// WriteInstructionsFile rewrites .github/instructions/copilot-curate.instructions.md
+// wholesale. The file always carries the YAML front-matter `applyTo: "**"` so
+// GitHub Copilot treats it as a path-specific custom-instructions file
+// applying to every file in the repo. Returns true if the file changed.
+//
+// Unlike AGENTS.md this file is owned entirely by gh-copilot-curate: there
+// are no fence markers and any hand edits are overwritten on the next
+// mutating command.
+func WriteInstructionsFile(repoRoot string, entries []Entry) (changed bool, err error) {
+	full := filepath.Join(repoRoot, filepath.FromSlash(InstructionsFile))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return false, err
+	}
+	want := []byte(renderInstructionsFile(entries))
+	existing, rerr := os.ReadFile(full)
+	if rerr != nil && !os.IsNotExist(rerr) {
+		return false, rerr
+	}
+	if rerr == nil && bytesEqualEOLAware(existing, want) {
+		return false, nil
+	}
+	return true, writeFileAtomic(full, want)
+}
+
+// CleanLegacyCopilotInstructionsBlock removes the gh-copilot-curate managed
+// block (with its fence markers) from .github/copilot-instructions.md, if
+// present. This is the one-shot v0.4 → v0.5 migration: v0.4.x wrote a
+// managed block here, v0.5+ writes a separate path-specific file instead.
+//
+// If the file is empty after the block is removed, the file is deleted. If
+// the file contains hand-authored content outside the markers, that content
+// is preserved and the file is rewritten without the managed block.
+//
+// Returns (cleaned, deleted, err) where cleaned reports that a managed
+// block was actually removed and deleted reports that the file itself was
+// removed. Both false means the file either did not exist or had no
+// managed block — in both cases there is nothing to migrate.
+func CleanLegacyCopilotInstructionsBlock(repoRoot string) (cleaned bool, deleted bool, err error) {
+	full := filepath.Join(repoRoot, filepath.FromSlash(LegacyCopilotInstFile))
+	existing, rerr := os.ReadFile(full)
+	if os.IsNotExist(rerr) {
+		return false, false, nil
+	}
+	if rerr != nil {
+		return false, false, rerr
+	}
+	if !bytes.Contains(existing, []byte(BeginMarker)) || !bytes.Contains(existing, []byte(EndMarker)) {
+		return false, false, nil
+	}
+	stripped := removeManagedBlock(existing)
+	if strings.TrimSpace(string(stripped)) == "" {
+		if err := os.Remove(full); err != nil {
+			return true, false, err
+		}
+		return true, true, nil
+	}
+	if bytesEqualEOLAware(existing, stripped) {
+		// Sanity guard: markers were present but removeManagedBlock made
+		// no change. Treat as no-op rather than infinite-loop risk.
+		return false, false, nil
+	}
+	if err := writeFileAtomic(full, stripped); err != nil {
+		return false, false, err
+	}
+	return true, false, nil
+}
+
+// writeFileAtomic writes data to full atomically (CreateTemp + Rename) with
+// a randomized temp name in the same directory so a pre-existing symlink at
+// a predictable path can't be used as a write-redirect.
+func writeFileAtomic(full string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(full), filepath.Base(full)+".tmp-*")
 	if err != nil {
-		return false, err
+		return err
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if _, err := tmp.Write(updated); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		return false, err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return false, err
+		return err
 	}
-	if err := os.Rename(tmpName, full); err != nil {
-		return false, err
-	}
-	return true, nil
+	return os.Rename(tmpName, full)
 }
 
 // ManagedBlockMatches returns true if the managed block in relPath equals
-// what would be written for entries. Used by `verify`.
+// what would be written for entries. Used by `verify` for AGENTS.md.
 //
 // Comparison normalises line endings: a file checked out with CRLF (e.g. via
 // core.autocrlf on Windows) is treated as equivalent to its LF form, so we
@@ -103,6 +197,29 @@ func ManagedBlockMatches(repoRoot, relPath string, entries []Entry) (bool, error
 	return normalizeEOL(strings.TrimSpace(got)) == normalizeEOL(strings.TrimSpace(want)), nil
 }
 
+// InstructionsFileMatches returns true if .github/instructions/copilot-curate.instructions.md
+// equals what WriteInstructionsFile would produce for entries. Used by `verify`.
+//
+// Semantics on a missing file:
+//   - len(entries) == 0 → match (we haven't written it yet, nothing to drift)
+//   - len(entries) > 0  → mismatch (file should exist; report drift)
+//
+// This mirrors the bootstrap policy in skills.Operations: the instructions
+// file is created lazily on the first mutating command that produces a
+// non-empty inventory, not on `init`.
+func InstructionsFileMatches(repoRoot string, entries []Entry) (bool, error) {
+	full := filepath.Join(repoRoot, filepath.FromSlash(InstructionsFile))
+	existing, err := os.ReadFile(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return len(entries) == 0, nil
+		}
+		return false, err
+	}
+	want := renderInstructionsFile(entries)
+	return normalizeEOL(string(existing)) == normalizeEOL(want), nil
+}
+
 func normalizeEOL(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
 
 func bytesEqualEOLAware(a, b []byte) bool {
@@ -110,7 +227,41 @@ func bytesEqualEOLAware(a, b []byte) bool {
 }
 
 func renderManagedBlock(entries []Entry) string {
-	// Group by plugin, list skills then agents within each.
+	var b strings.Builder
+	b.WriteString(BeginMarker + "\n")
+	b.WriteString(renderInventoryBody(entries, ""))
+	b.WriteString(EndMarker + "\n")
+	return b.String()
+}
+
+// renderInstructionsFile renders the full body of the path-specific
+// instructions file at .github/instructions/copilot-curate.instructions.md.
+//
+// Layout:
+//   - YAML front-matter with applyTo: "**" so Copilot applies the
+//     instructions to every file in the repo.
+//   - Same inventory body as the AGENTS.md managed block, but with link
+//     paths prefixed by "../../" so Markdown relative-path resolution
+//     reaches the .copilot/ tree from .github/instructions/.
+//
+// The file has no fence markers — gh-copilot-curate owns it wholesale.
+func renderInstructionsFile(entries []Entry) string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("applyTo: \"**\"\n")
+	b.WriteString("---\n")
+	b.WriteString(renderInventoryBody(entries, "../../"))
+	return b.String()
+}
+
+// renderInventoryBody emits the H2 heading and per-plugin sections shared
+// by AGENTS.md (no link prefix; file lives at repo root) and the path-
+// specific instructions file (linkPrefix "../../"; file is two levels deep).
+//
+// linkPrefix is prepended to every entry.Link that is a relative repo path
+// (i.e. does not start with a scheme or "/"); absolute URLs and root-anchored
+// paths are emitted as-is.
+func renderInventoryBody(entries []Entry, linkPrefix string) string {
 	byPlugin := map[string][]Entry{}
 	for _, e := range entries {
 		byPlugin[e.Plugin] = append(byPlugin[e.Plugin], e)
@@ -122,7 +273,6 @@ func renderManagedBlock(entries []Entry) string {
 	sort.Strings(plugins)
 
 	var b strings.Builder
-	b.WriteString(BeginMarker + "\n")
 	b.WriteString("## Available skills (managed by gh-copilot-curate — do not edit by hand)\n\n")
 	b.WriteString("Run `gh copilot-curate list` to see installed plugins; run `gh copilot-curate update` to refresh.\n\n")
 	if len(plugins) == 0 {
@@ -146,15 +296,16 @@ func renderManagedBlock(entries []Entry) string {
 			if mode == "" {
 				mode = "summary"
 			}
+			link := prefixLink(e.Link, linkPrefix)
 			switch mode {
 			case "link":
-				fmt.Fprintf(&b, "- [%s](%s) — _%s_\n", e.Title, e.Link, kind)
+				fmt.Fprintf(&b, "- [%s](%s) — _%s_\n", e.Title, link, kind)
 			case "inline":
 				summary := strings.TrimSpace(e.Summary)
 				if summary == "" {
 					summary = "_no description_"
 				}
-				fmt.Fprintf(&b, "- [%s](%s) — _%s_ — %s\n", e.Title, e.Link, kind, summary)
+				fmt.Fprintf(&b, "- [%s](%s) — _%s_ — %s\n", e.Title, link, kind, summary)
 				body := readBodyForInline(e.FullPath)
 				if body != "" {
 					b.WriteString("\n  <details><summary>Full content</summary>\n\n")
@@ -171,13 +322,25 @@ func renderManagedBlock(entries []Entry) string {
 				if summary == "" {
 					summary = "_no description_"
 				}
-				fmt.Fprintf(&b, "- [%s](%s) — _%s_ — %s\n", e.Title, e.Link, kind, summary)
+				fmt.Fprintf(&b, "- [%s](%s) — _%s_ — %s\n", e.Title, link, kind, summary)
 			}
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(EndMarker + "\n")
 	return b.String()
+}
+
+// prefixLink prepends prefix to relative repo paths only. Absolute URLs
+// (anything with a "://" scheme) and root-anchored paths ("/...") are
+// emitted unchanged so external links keep working from a deeper file.
+func prefixLink(link, prefix string) string {
+	if prefix == "" || link == "" {
+		return link
+	}
+	if strings.Contains(link, "://") || strings.HasPrefix(link, "/") {
+		return link
+	}
+	return prefix + link
 }
 
 // replaceOrAppendBlock writes the managed block into doc, replacing any
@@ -208,6 +371,32 @@ func replaceOrAppendBlock(doc []byte, block string) []byte {
 		out.WriteString("\n\n")
 	}
 	out.WriteString(strings.TrimRight(block, "\n") + "\n")
+	return out.Bytes()
+}
+
+// removeManagedBlock strips the gh-copilot-curate managed block (markers
+// included, plus the trailing newline) from doc, preserving everything
+// outside the markers. If no block is present doc is returned unchanged.
+// Used by the v0.4 → v0.5 legacy migration.
+func removeManagedBlock(doc []byte) []byte {
+	begin := bytes.Index(doc, []byte(BeginMarker))
+	end := bytes.Index(doc, []byte(EndMarker))
+	if begin < 0 || end <= begin {
+		return doc
+	}
+	stop := end + len(EndMarker)
+	if stop < len(doc) && doc[stop] == '\n' {
+		stop++
+	}
+	// Also trim a single leading blank line we inserted in replaceOrAppendBlock
+	// so we don't leave an orphan blank where the block used to be.
+	cut := begin
+	if cut >= 2 && doc[cut-1] == '\n' && doc[cut-2] == '\n' {
+		cut--
+	}
+	var out bytes.Buffer
+	out.Write(doc[:cut])
+	out.Write(doc[stop:])
 	return out.Bytes()
 }
 

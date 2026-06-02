@@ -42,6 +42,9 @@ func newUpdateCmd() *cobra.Command {
 				}
 				fprintln(cmd.OutOrStdout(), prefix, p.ID, "@", shortSHA(p.ResolvedSHA))
 			}
+			if !dryRun {
+				printLegacyMigrationNotice(cmd, res.LegacyBlockCleaned, res.LegacyFileDeleted)
+			}
 			return nil
 		},
 	}

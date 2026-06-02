@@ -158,3 +158,82 @@ func TestInitRejectsV03LegacyLayout(t *testing.T) {
 		t.Errorf("error should mention .copilot/curate and v0.3 migration: %v", err)
 	}
 }
+
+// TestInitMigratesV04ManagedBlock simulates a repo that ran v0.4 — it has
+// .github/copilot-instructions.md containing only the gh-copilot-curate
+// managed block. v0.5+ `init` must strip the block and (because the file
+// is otherwise empty) delete the file. The new instructions file is NOT
+// bootstrapped on init.
+func TestInitMigratesV04ManagedBlock(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(root, ".github", "copilot-instructions.md")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v04block := "<!-- BEGIN gh-copilot-curate managed -->\n## Available skills (managed by gh-copilot-curate — do not edit by hand)\n\n_No plugins installed yet._\n<!-- END gh-copilot-curate managed -->\n"
+	if err := os.WriteFile(legacy, []byte(v04block), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &bytes.Buffer{}
+	cmd := NewRootCmd("test")
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"init", "--root", root})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init: %v\n%s", err, out.String())
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Errorf("expected legacy file to be deleted, stat err=%v", err)
+	}
+	if !strings.Contains(out.String(), "migrated v0.4 layout") {
+		t.Errorf("expected migration notice in output: %q", out.String())
+	}
+	// init must NOT bootstrap the new instructions file — it's created
+	// lazily on the first `add`.
+	newInst := filepath.Join(root, ".github", "instructions", "copilot-curate.instructions.md")
+	if _, err := os.Stat(newInst); !os.IsNotExist(err) {
+		t.Errorf("init should not pre-create the instructions file, stat err=%v", err)
+	}
+}
+
+// TestInitPreservesUserContentDuringMigration verifies the v0.4 → v0.5
+// migration keeps hand-authored content that lived in the same
+// .github/copilot-instructions.md file alongside the managed block.
+func TestInitPreservesUserContentDuringMigration(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(root, ".github", "copilot-instructions.md")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	combined := "# My repo-wide rules\n\nAlways prefer tabs.\n\n<!-- BEGIN gh-copilot-curate managed -->\n## Available skills (managed by gh-copilot-curate — do not edit by hand)\n\n_No plugins installed yet._\n<!-- END gh-copilot-curate managed -->\n"
+	if err := os.WriteFile(legacy, []byte(combined), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &bytes.Buffer{}
+	cmd := NewRootCmd("test")
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"init", "--root", root})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init: %v\n%s", err, out.String())
+	}
+	got, err := os.ReadFile(legacy)
+	if err != nil {
+		t.Fatalf("legacy file should remain (had hand-authored content): %v", err)
+	}
+	s := string(got)
+	if !strings.Contains(s, "Always prefer tabs.") {
+		t.Errorf("hand-authored content lost:\n%s", s)
+	}
+	if strings.Contains(s, "BEGIN gh-copilot-curate managed") {
+		t.Errorf("managed block should be stripped:\n%s", s)
+	}
+}

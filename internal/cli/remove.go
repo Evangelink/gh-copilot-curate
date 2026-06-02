@@ -38,6 +38,9 @@ func newRemoveCmd() *cobra.Command {
 			for _, f := range res.Files {
 				fprintln(cmd.OutOrStdout(), prefix, f)
 			}
+			if !dryRun {
+				printLegacyMigrationNotice(cmd, res.LegacyBlockCleaned, res.LegacyFileDeleted)
+			}
 			return nil
 		},
 	}
