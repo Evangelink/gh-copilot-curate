@@ -38,9 +38,10 @@ func NewRootCmd(version string) *cobra.Command {
 const rootLong = `gh-copilot-curate installs and updates AI agent skills/plugins from a source
 repository (e.g. dotnet/skills) into the current repo.
 
-Installed plugins live under .copilot/plugins/<plugin>/ (mirroring Copilot
-CLI's own ~/.copilot/installed-plugins/<source>/<plugin>/ layout). Tool
-state (manifest, lock) is namespaced under .copilot/curate/. AGENTS.md
+Skills are installed under .agents/skills/<skill>/ and agents under
+.github/agents/<name>.agent.md — the same paths a user would create
+manually (and what gh skill --scope=project writes). Tool state
+(manifest, lock) is namespaced under .copilot/curate/. AGENTS.md
 and .github/instructions/copilot-curate.instructions.md are rewritten with
 a managed inventory so the GitHub.com Copilot cloud agent, Copilot CLI,
 and IDE Chats pick up installed skills automatically.
@@ -101,4 +102,16 @@ func printLegacyMigrationNotice(cmd *cobra.Command, cleaned, deleted bool) {
 		fprintln(out, "migrated v0.4 layout: stripped the gh-copilot-curate managed block from .github/copilot-instructions.md (preserved your other content)")
 	}
 	fprintln(out, "  instructions now live in .github/instructions/copilot-curate.instructions.md (path-specific custom instructions, applyTo \"**\")")
+}
+
+// printLegacyLayoutMigrationNotice surfaces the v0.5 → v0.6 one-shot move
+// from .copilot/plugins/<plugin>/ to .agents/skills/ + .github/agents/.
+// Idempotent: only prints when files were actually moved during the call.
+func printLegacyLayoutMigrationNotice(cmd *cobra.Command, migrated bool) {
+	if !migrated {
+		return
+	}
+	out := cmd.OutOrStdout()
+	fprintln(out, "migrated v0.5 install layout: moved skills to .agents/skills/<skill>/ and agents to .github/agents/<name>.agent.md")
+	fprintln(out, "  removed .copilot/plugins/ — installed content now lives at the canonical user-equivalent paths (auto-discovered by Copilot CLI, the cloud agent, and gh skill)")
 }

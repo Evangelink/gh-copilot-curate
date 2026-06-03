@@ -54,7 +54,7 @@ type Entry struct {
 	Plugin  string // plugin id
 	Title   string // short title (filename if no H1 found)
 	Summary string // first paragraph, single-line
-	Link    string // repo-relative path (e.g. .copilot/plugins/x/skills/y/SKILL.md)
+	Link    string // repo-relative path (e.g. .agents/skills/y/SKILL.md or .github/agents/x.agent.md)
 	IsAgent bool   // distinguishes agents from skills in the rendered list
 	// Mode controls how the entry is rendered in the managed block:
 	//   "summary" (default) — title + 1-line summary + link

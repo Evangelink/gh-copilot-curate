@@ -43,6 +43,7 @@ func newUpdateCmd() *cobra.Command {
 				fprintln(cmd.OutOrStdout(), prefix, p.ID, "@", shortSHA(p.ResolvedSHA))
 			}
 			if !dryRun {
+				printLegacyLayoutMigrationNotice(cmd, res.LegacyLayoutMigrated)
 				printLegacyMigrationNotice(cmd, res.LegacyBlockCleaned, res.LegacyFileDeleted)
 			}
 			return nil

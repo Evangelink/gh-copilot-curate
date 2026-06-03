@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -71,6 +72,11 @@ type AddResult struct {
 	// one-shot migration notice.
 	LegacyBlockCleaned bool
 	LegacyFileDeleted  bool
+	// LegacyLayoutMigrated is true when this command moved files from the
+	// v0.4-v0.5 .copilot/plugins/<plugin>/... tree into the canonical
+	// .agents/skills/ and .github/agents/ locations. The CLI prints a
+	// one-shot notice when this fires.
+	LegacyLayoutMigrated bool
 }
 
 // PluginChange describes the change for a single installed plugin.
@@ -143,7 +149,21 @@ func (ops *Operations) Add(ctx context.Context, opts AddOptions) (*AddResult, er
 		return nil, fmt.Errorf("load lock: %w", err)
 	}
 
-	res := &AddResult{Manifest: mf, Lock: lock}
+	// v0.5 → v0.6 auto-migration. Runs before any new writes so the lock
+	// matches on-disk reality when we compute collisions.
+	migrated, err := migrateLegacyPluginsLayout(opts.RepoRoot, lock, opts.Force, opts.DryRun)
+	if err != nil {
+		return nil, err
+	}
+
+	// Preflight collision check: every incoming destination must be
+	// (a) writable (no untracked file in the way unless --force) and
+	// (b) unique across incoming plugins + other locked plugins.
+	if err := checkInstallCollisions(opts.RepoRoot, plugins, lock, opts.Force); err != nil {
+		return nil, err
+	}
+
+	res := &AddResult{Manifest: mf, Lock: lock, LegacyLayoutMigrated: migrated}
 
 	for _, p := range plugins {
 		change, err := installPlugin(ctx, opts, upstreamRoot, p, kind, sha, mf, lock)
@@ -265,12 +285,13 @@ type RemoveOptions struct {
 
 // RemoveResult reports what was removed.
 type RemoveResult struct {
-	Files              []string
-	DriftDetected      bool
-	Manifest           *manifest.Manifest
-	Lock               *manifest.Lock
-	LegacyBlockCleaned bool
-	LegacyFileDeleted  bool
+	Files                []string
+	DriftDetected        bool
+	Manifest             *manifest.Manifest
+	Lock                 *manifest.Lock
+	LegacyBlockCleaned   bool
+	LegacyFileDeleted    bool
+	LegacyLayoutMigrated bool
 }
 
 // Remove deletes a plugin's files. If any file is locally modified, refuses
@@ -281,6 +302,12 @@ func (ops *Operations) Remove(opts RemoveOptions) (*RemoveResult, error) {
 		return nil, err
 	}
 	lock, err := manifest.LoadLock(opts.RepoRoot)
+	if err != nil {
+		return nil, err
+	}
+	// v0.5 → v0.6 auto-migration so subsequent path lookups hit the
+	// canonical locations. Honors opts.Force for drifted legacy files.
+	migrated, err := migrateLegacyPluginsLayout(opts.RepoRoot, lock, opts.Force, opts.DryRun)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +325,7 @@ func (ops *Operations) Remove(opts RemoveOptions) (*RemoveResult, error) {
 		}
 	}
 
-	res := &RemoveResult{Manifest: mf, Lock: lock}
+	res := &RemoveResult{Manifest: mf, Lock: lock, LegacyLayoutMigrated: migrated}
 	var driftFiles []string
 	for _, f := range lp.Files {
 		full := safeLockPath(opts.RepoRoot, f.Path)
@@ -329,7 +356,24 @@ func (ops *Operations) Remove(opts RemoveOptions) (*RemoveResult, error) {
 			return res, err
 		}
 	}
-	pruneEmptyDirs(filepath.Join(opts.RepoRoot, manifest.PluginsDir, opts.PluginName))
+	// Prune empty directories left behind, but never delete the canonical
+	// install roots themselves — they're shared with other plugins and
+	// with user-installed `gh skill install --scope=project`.
+	skillsRootAbs := filepath.Join(opts.RepoRoot, filepath.FromSlash(manifest.SkillsRoot))
+	agentsRootAbs := filepath.Join(opts.RepoRoot, filepath.FromSlash(manifest.AgentsRoot))
+	for _, f := range lp.Files {
+		parent := filepath.Dir(safeLockPath(opts.RepoRoot, f.Path))
+		// Pick the appropriate boundary based on which root the file lives
+		// under; fall back to repo root for paths outside both (defensive).
+		switch {
+		case strings.HasPrefix(filepath.ToSlash(f.Path), manifest.SkillsRoot+"/"):
+			pruneEmptyDirs(parent, skillsRootAbs)
+		case strings.HasPrefix(filepath.ToSlash(f.Path), manifest.AgentsRoot+"/"):
+			pruneEmptyDirs(parent, agentsRootAbs)
+		default:
+			pruneEmptyDirs(parent, opts.RepoRoot)
+		}
+	}
 
 	mf.Remove(opts.PluginName)
 	lock.Remove(opts.PluginName)
@@ -360,12 +404,17 @@ type VerifyResult struct {
 	// carries a v0.4-era managed block. Verify only reports this; the
 	// migration runs on the next mutating command (add/update/remove/init).
 	LegacyBlockPresent bool
+	// LegacyLayoutPending flags that the lock still references files under
+	// .copilot/plugins/<plugin>/... (v0.4-v0.5 layout). Verify only
+	// reports; the v0.5→v0.6 migration runs on the next mutating command.
+	LegacyLayoutPending bool
 }
 
 // OK reports whether the verify result is clean.
 func (v VerifyResult) OK() bool {
 	return len(v.MissingFiles) == 0 && len(v.ModifiedFiles) == 0 && len(v.UnknownInLock) == 0 &&
-		!v.ManifestStale && !v.BlockStale && !v.InstructionsFileStale && !v.LegacyBlockPresent
+		!v.ManifestStale && !v.BlockStale && !v.InstructionsFileStale &&
+		!v.LegacyBlockPresent && !v.LegacyLayoutPending
 }
 
 // Verify checks that every locked file exists with matching hash, that the
@@ -438,6 +487,19 @@ func (ops *Operations) Verify(repoRoot string) (*VerifyResult, error) {
 			res.LegacyBlockPresent = true
 		}
 	}
+	// Legacy v0.5 layout: any lock entry under .copilot/plugins/ means the
+	// v0.5→v0.6 migration hasn't run yet on this repo.
+	for _, p := range lock.Plugins {
+		for _, f := range p.Files {
+			if strings.HasPrefix(filepath.ToSlash(f.Path), manifest.LegacyPluginsDir+"/") {
+				res.LegacyLayoutPending = true
+				break
+			}
+		}
+		if res.LegacyLayoutPending {
+			break
+		}
+	}
 	sort.Strings(res.MissingFiles)
 	sort.Strings(res.ModifiedFiles)
 	sort.Strings(res.UnknownInLock)
@@ -456,9 +518,10 @@ type UpdateOptions struct {
 
 // UpdateResult summarises an update run.
 type UpdateResult struct {
-	Plugins            []PluginChange
-	LegacyBlockCleaned bool
-	LegacyFileDeleted  bool
+	Plugins              []PluginChange
+	LegacyBlockCleaned   bool
+	LegacyFileDeleted    bool
+	LegacyLayoutMigrated bool
 }
 
 // Update re-fetches each plugin at its manifest ref and rewrites files.
@@ -539,6 +602,9 @@ func (ops *Operations) Update(ctx context.Context, opts UpdateOptions) (*UpdateR
 		}
 		if addRes.LegacyFileDeleted {
 			res.LegacyFileDeleted = true
+		}
+		if addRes.LegacyLayoutMigrated {
+			res.LegacyLayoutMigrated = true
 		}
 	}
 	return res, nil
@@ -709,29 +775,102 @@ func safeLockPath(repoRoot, lockRel string) string {
 	return filepath.Join(repoRoot, filepath.FromSlash(lockRel))
 }
 
-// EnsurePackGitAttributes writes .copilot/.gitattributes with
-// `* text eol=lf` so files under .copilot/ keep stable byte content across
-// clones with core.autocrlf enabled. Without this, localHash comparison in
-// verify produces spurious drift after a Windows checkout. The file is
-// placed at the .copilot/ root so it covers both .copilot/curate/ (lock,
-// manifest) and .copilot/plugins/<plugin>/... installed content.
-// Idempotent: the file is only written if absent or its content differs.
+// EnsurePackGitAttributes ensures that gh-copilot-curate's managed files
+// have stable byte content across CRLF/LF checkouts, so LocalHash
+// comparison in verify doesn't produce spurious drift.
+//
+// It writes two files (both idempotent):
+//
+//  1. .copilot/.gitattributes with `* text eol=lf` so the manifest, lock,
+//     and any future tool-state files keep stable bytes.
+//  2. The repo-root .gitattributes file, in a fenced gh-copilot-curate
+//     managed block, covering the canonical project-scope install roots
+//     (.agents/skills/** and .github/agents/**). User-authored entries
+//     outside the fence are preserved.
 func EnsurePackGitAttributes(repoRoot string) error {
+	// 1. .copilot/.gitattributes
 	rel := filepath.Join(manifest.PackRoot, ".gitattributes")
 	full := filepath.Join(repoRoot, rel)
 	want := []byte("# managed by gh-copilot-curate: keep stable byte content across CRLF/LF checkouts\n* text eol=lf\n")
 	existing, err := os.ReadFile(full)
-	if err == nil && bytes.Equal(existing, want) {
-		return nil
-	}
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return writeFileAtomic(full, want, 0o644)
+	if !bytes.Equal(existing, want) {
+		if err := writeFileAtomic(full, want, 0o644); err != nil {
+			return err
+		}
+	}
+	// 2. repo-root .gitattributes — managed block.
+	return ensureRootGitAttributesBlock(repoRoot)
 }
 
-func pruneEmptyDirs(dir string) {
+const (
+	rootGitAttrBegin = "# BEGIN gh-copilot-curate managed"
+	rootGitAttrEnd   = "# END gh-copilot-curate managed"
+)
+
+// ensureRootGitAttributesBlock writes (or refreshes) a fenced managed block
+// in the repo-root .gitattributes file covering the canonical install
+// roots. The block is inserted at the end of the file when absent and is
+// surgically replaced in place when present.
+func ensureRootGitAttributesBlock(repoRoot string) error {
+	full := filepath.Join(repoRoot, ".gitattributes")
+	wantBlock := rootGitAttrBegin + "\n" +
+		"# Keep installed skills and agents at stable bytes across CRLF/LF checkouts\n" +
+		"# so gh copilot-curate verify does not report spurious drift.\n" +
+		".agents/skills/** text eol=lf\n" +
+		".github/agents/** text eol=lf\n" +
+		rootGitAttrEnd + "\n"
+
+	existing, err := os.ReadFile(full)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	// File missing — write just the block.
+	if err != nil {
+		return writeFileAtomic(full, []byte(wantBlock), 0o644)
+	}
+	// Find and replace existing block, or append.
+	beginIdx := bytes.Index(existing, []byte(rootGitAttrBegin))
+	endIdx := bytes.Index(existing, []byte(rootGitAttrEnd))
+	if beginIdx >= 0 && endIdx > beginIdx {
+		// Replace from beginIdx through end-of-line of the END marker.
+		tailStart := endIdx + len(rootGitAttrEnd)
+		if tailStart < len(existing) && existing[tailStart] == '\n' {
+			tailStart++
+		}
+		next := make([]byte, 0, len(existing)+len(wantBlock))
+		next = append(next, existing[:beginIdx]...)
+		next = append(next, wantBlock...)
+		next = append(next, existing[tailStart:]...)
+		if bytes.Equal(next, existing) {
+			return nil
+		}
+		return writeFileAtomic(full, next, 0o644)
+	}
+	// Append, ensuring a separating newline.
+	var next bytes.Buffer
+	next.Write(existing)
+	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
+		next.WriteByte('\n')
+	}
+	if len(existing) > 0 {
+		next.WriteByte('\n')
+	}
+	next.WriteString(wantBlock)
+	return writeFileAtomic(full, next.Bytes(), 0o644)
+}
+
+// pruneEmptyDirs walks up from `dir` and removes empty directories. It
+// stops at `stopAt` (exclusive) — that directory is never removed even if
+// empty. Both `dir` and `stopAt` must be absolute paths in normalized form.
+// Passing an empty `stopAt` disables the boundary check.
+func pruneEmptyDirs(dir, stopAt string) {
 	for d := dir; d != "" && d != filepath.Dir(d); d = filepath.Dir(d) {
+		if stopAt != "" && d == stopAt {
+			return
+		}
 		entries, err := os.ReadDir(d)
 		if err != nil || len(entries) > 0 {
 			return
@@ -747,6 +886,260 @@ func hashBytes(b []byte) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
+// migrateLegacyPluginsLayout migrates a v0.4–v0.5 install (where files
+// lived under .copilot/plugins/<plugin>/{skills,agents,...}) to the v0.6
+// canonical layout (.agents/skills/<skill>/... and .github/agents/...).
+//
+// For each lock entry whose Path is under .copilot/plugins/:
+//
+//  1. Compute the new canonical path. Lock entries whose path can't be
+//     mapped (orphaned, plugin metadata) are dropped from the lock.
+//  2. Compare the on-disk bytes against LockFile.LocalHash. If they
+//     differ, the file has been hand-edited — refuse unless force=true so
+//     we don't bless local edits as the new managed state.
+//  3. Move the file (rename) to the new path. LocalHash is preserved
+//     unchanged; only the Path field is rewritten.
+//  4. After all moves succeed, save the lock and prune .copilot/plugins/.
+//
+// In dry-run mode no changes are made; the function reports whether a
+// migration WOULD occur via the return value but skips IO. Returns
+// (true, nil) when at least one file was migrated (or would be in
+// dry-run), (false, nil) when no migration was needed.
+//
+// IMPORTANT: this mutates `lock` in place when migration runs, so the
+// caller's subsequent reads (e.g. plugin file iteration) see the new
+// paths. The lock is also written to disk on success.
+func migrateLegacyPluginsLayout(repoRoot string, lock *manifest.Lock, force, dryRun bool) (bool, error) {
+	// Quick scan: any lock paths under .copilot/plugins/?
+	type pendingMove struct {
+		pluginIdx int
+		fileIdx   int
+		oldPath   string
+		newPath   string
+	}
+	var moves []pendingMove
+	var orphans []struct{ pluginIdx, fileIdx int }
+	for pi := range lock.Plugins {
+		for fi := range lock.Plugins[pi].Files {
+			f := lock.Plugins[pi].Files[fi]
+			ps := filepath.ToSlash(f.Path)
+			if !strings.HasPrefix(ps, manifest.LegacyPluginsDir+"/") {
+				continue
+			}
+			// Strip ".copilot/plugins/<plugin>/" prefix; the remainder is
+			// the plugin-relative path that canonicalForDotnetSkills would
+			// produce at install time.
+			rest := ps[len(manifest.LegacyPluginsDir)+1:]
+			// rest = "<plugin>/<...>"; drop leading "<plugin>/".
+			slash := strings.IndexByte(rest, '/')
+			if slash < 0 {
+				orphans = append(orphans, struct{ pluginIdx, fileIdx int }{pi, fi})
+				continue
+			}
+			relInPlugin := rest[slash+1:]
+			newCanonical, ok := mapLegacyPluginRelToCanonical(relInPlugin)
+			if !ok {
+				// Plugin-level metadata or anything outside skills//agents/.
+				// Drop from the lock — v0.6 doesn't track it.
+				orphans = append(orphans, struct{ pluginIdx, fileIdx int }{pi, fi})
+				continue
+			}
+			moves = append(moves, pendingMove{pi, fi, f.Path, newCanonical})
+		}
+	}
+	if len(moves) == 0 && len(orphans) == 0 {
+		return false, nil
+	}
+	if dryRun {
+		return true, nil
+	}
+
+	// Drift check first — never overwrite (or move) a hand-edited file
+	// without explicit consent.
+	var drifted []string
+	for _, m := range moves {
+		oldFull := filepath.Join(repoRoot, filepath.FromSlash(m.oldPath))
+		data, err := os.ReadFile(oldFull)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// File missing — nothing to move; the new install will
+				// recreate it. Skip silently.
+				continue
+			}
+			return false, fmt.Errorf("read %s: %w", m.oldPath, err)
+		}
+		want := lock.Plugins[m.pluginIdx].Files[m.fileIdx].LocalHash
+		if want != "" && hashBytes(data) != want {
+			drifted = append(drifted, m.oldPath)
+		}
+	}
+	if len(drifted) > 0 && !force {
+		return false, fmt.Errorf("legacy v0.5 layout has %d locally-modified file(s); pass --force to migrate anyway:\n  - %s",
+			len(drifted), strings.Join(drifted, "\n  - "))
+	}
+
+	// Perform moves. We rename instead of copy+delete so file modes and
+	// inodes are preserved.
+	for _, m := range moves {
+		oldFull := filepath.Join(repoRoot, filepath.FromSlash(m.oldPath))
+		newFull := filepath.Join(repoRoot, filepath.FromSlash(m.newPath))
+		if err := os.MkdirAll(filepath.Dir(newFull), 0o755); err != nil {
+			return false, fmt.Errorf("mkdir %s: %w", filepath.Dir(m.newPath), err)
+		}
+		if _, err := os.Stat(oldFull); os.IsNotExist(err) {
+			// Source missing; just update the lock entry so the install
+			// step recreates it at the new path.
+			lock.Plugins[m.pluginIdx].Files[m.fileIdx].Path = m.newPath
+			continue
+		}
+		if err := os.Rename(oldFull, newFull); err != nil {
+			return false, fmt.Errorf("move %s → %s: %w", m.oldPath, m.newPath, err)
+		}
+		lock.Plugins[m.pluginIdx].Files[m.fileIdx].Path = m.newPath
+	}
+
+	// Drop orphaned entries (plugin metadata, malformed paths). Process in
+	// reverse index order per plugin so the indices stay stable.
+	if len(orphans) > 0 {
+		// Group by plugin and sort descending fileIdx.
+		byPlugin := map[int][]int{}
+		for _, o := range orphans {
+			byPlugin[o.pluginIdx] = append(byPlugin[o.pluginIdx], o.fileIdx)
+		}
+		for pi, fis := range byPlugin {
+			sort.Sort(sort.Reverse(sort.IntSlice(fis)))
+			files := lock.Plugins[pi].Files
+			for _, fi := range fis {
+				// Delete the orphaned file on disk as well so the user
+				// isn't left with a stray .copilot/plugins/<x>/plugin.json.
+				oldFull := filepath.Join(repoRoot, filepath.FromSlash(files[fi].Path))
+				_ = os.Remove(oldFull)
+				files = append(files[:fi], files[fi+1:]...)
+			}
+			lock.Plugins[pi].Files = files
+		}
+	}
+
+	// Prune the entire .copilot/plugins/ tree. After the moves, only
+	// metadata files we don't track would remain — but those are user
+	// curation artifacts and should have already been removed in the
+	// orphan-cleanup loop above. Walk top-down and remove empty dirs.
+	pluginsAbs := filepath.Join(repoRoot, filepath.FromSlash(manifest.LegacyPluginsDir))
+	removeEmptyTree(pluginsAbs)
+
+	return true, nil
+}
+
+// mapLegacyPluginRelToCanonical mirrors canonicalForDotnetSkills (in the
+// layout package) but is duplicated here so the migration path doesn't
+// take an import cycle on layout from skills.
+func mapLegacyPluginRelToCanonical(relInPluginSlash string) (string, bool) {
+	parts := strings.SplitN(relInPluginSlash, "/", 2)
+	if len(parts) < 2 {
+		return "", false
+	}
+	switch parts[0] {
+	case "skills":
+		return path.Join(manifest.SkillsRoot, parts[1]), true
+	case "agents":
+		if strings.Contains(parts[1], "/") || !strings.HasSuffix(parts[1], ".agent.md") {
+			return "", false
+		}
+		return path.Join(manifest.AgentsRoot, parts[1]), true
+	default:
+		return "", false
+	}
+}
+
+// removeEmptyTree walks `root` bottom-up and removes every directory that
+// becomes empty. If `root` itself ends up empty, it is removed too.
+func removeEmptyTree(root string) {
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		// Continue on errors (root missing is fine).
+		if err != nil {
+			return nil
+		}
+		return nil
+	})
+	// Two-pass: collect dirs, sort by depth desc, remove if empty.
+	var dirs []string
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			dirs = append(dirs, p)
+		}
+		return nil
+	})
+	sort.Slice(dirs, func(i, j int) bool {
+		return strings.Count(dirs[i], string(filepath.Separator)) > strings.Count(dirs[j], string(filepath.Separator))
+	})
+	for _, d := range dirs {
+		entries, err := os.ReadDir(d)
+		if err != nil || len(entries) > 0 {
+			continue
+		}
+		_ = os.Remove(d)
+	}
+}
+
+// checkInstallCollisions does a preflight scan over the canonical
+// destinations that the incoming plugins want to write. It refuses when
+//
+//   - two incoming plugins map to the same destination path (the flat
+//     project-scope namespace means a same-named skill from two upstream
+//     plugins would clobber each other), or
+//   - an incoming destination is currently owned by a DIFFERENT locked
+//     plugin (would clobber another tracked plugin's file), or
+//   - an incoming destination exists on disk but isn't tracked by any
+//     locked plugin (would clobber an untracked / hand-installed file)
+//     and force=false.
+//
+// A destination owned by the SAME plugin id (a routine re-install or
+// `update`) is always permitted.
+func checkInstallCollisions(repoRoot string, plugins []layout.Plugin, lock *manifest.Lock, force bool) error {
+	// Build owner map of currently-locked destinations.
+	locked := map[string]string{} // canonical path → plugin id
+	for _, p := range lock.Plugins {
+		for _, f := range p.Files {
+			locked[filepath.ToSlash(f.Path)] = p.ID
+		}
+	}
+
+	// Set of incoming plugin ids (so we can detect intra-batch conflicts).
+	incoming := map[string]bool{}
+	for _, p := range plugins {
+		incoming[p.Name] = true
+	}
+
+	seen := map[string]string{} // canonical → first plugin in this batch
+	for _, p := range plugins {
+		for _, f := range p.Files {
+			dest := filepath.ToSlash(f.CanonicalPath)
+			if owner, ok := seen[dest]; ok && owner != p.Name {
+				return fmt.Errorf("collision: plugins %q and %q both install to %s; rename or exclude one",
+					owner, p.Name, dest)
+			}
+			seen[dest] = p.Name
+			if owner, ok := locked[dest]; ok && owner != p.Name {
+				return fmt.Errorf("collision: %s is already owned by plugin %q; refusing to overwrite from %q",
+					dest, owner, p.Name)
+			}
+			// Untracked file collision.
+			if _, ok := locked[dest]; ok {
+				continue // same plugin re-install — OK
+			}
+			full := filepath.Join(repoRoot, filepath.FromSlash(dest))
+			if _, err := os.Stat(full); err == nil && !force {
+				return fmt.Errorf("destination %s already exists and is not tracked by gh-copilot-curate; pass --force to overwrite",
+					dest)
+			}
+		}
+	}
+	return nil
+}
+
 // CheckNoLegacyLayout returns a descriptive error if the target repo still
 // contains an install from an earlier version of this tool. v0.3.0 moved
 // installs from .agent-pack/ (v0.2.x) to .copilot/agent-pack/; v0.4.0
@@ -754,6 +1147,11 @@ func hashBytes(b []byte) string {
 // tool-state dir from .copilot/agent-pack/ to .copilot/curate/. Running
 // v0.4+ against either legacy layout would silently create a parallel
 // install and leave AGENTS.md links inconsistent.
+//
+// Note: the v0.5 → v0.6 layout change (.copilot/plugins/<plugin>/ →
+// .agents/skills/ + .github/agents/) is auto-migrated by
+// migrateLegacyPluginsLayout and does NOT trigger an error here, because
+// installations from v0.5 are common enough that we want a smooth upgrade.
 //
 // Callers should invoke this from any mutating command (init, add, update,
 // remove) before performing IO. Verify/list are intentionally exempt so
