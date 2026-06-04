@@ -61,9 +61,9 @@ func TestTranslateDotnetSkillsCopiesWholeSubtree(t *testing.T) {
 	}
 	got := canonicalSet(plugins[0].Files)
 	want := []string{
-		".copilot/plugins/dotnet-msbuild/agents/msbuild.agent.md",
-		".copilot/plugins/dotnet-msbuild/skills/build-perf/SKILL.md",
-		".copilot/plugins/dotnet-msbuild/skills/build-perf/scripts/run.ps1",
+		".agents/skills/build-perf/SKILL.md",
+		".agents/skills/build-perf/scripts/run.ps1",
+		".github/agents/msbuild.agent.md",
 	}
 	if !equalSorted(got, want) {
 		t.Errorf("files: got %v want %v", got, want)
@@ -102,7 +102,38 @@ func TestTranslateDotnetSkillsIncludes(t *testing.T) {
 		t.Fatalf("got %+v", plugins)
 	}
 	got := canonicalSet(plugins[0].Files)
-	want := []string{".copilot/plugins/p/skills/keep/SKILL.md"}
+	want := []string{".agents/skills/keep/SKILL.md"}
+	if !equalSorted(got, want) {
+		t.Errorf("files: got %v want %v", got, want)
+	}
+}
+
+// TestTranslateDotnetSkillsSkipsNonSkillsAgentsFiles ensures upstream
+// plugin metadata (plugin.json, README, etc.) is intentionally omitted
+// from the install — the canonical project-scope layout has no home for it.
+func TestTranslateDotnetSkillsSkipsNonSkillsAgentsFiles(t *testing.T) {
+	root := t.TempDir()
+	plugin := filepath.Join(root, "plugins", "p")
+	mustWrite(t, filepath.Join(plugin, "plugin.json"), `{}`)
+	mustWrite(t, filepath.Join(plugin, "README.md"), "readme")
+	mustWrite(t, filepath.Join(plugin, "skills", "x", "SKILL.md"), "body")
+	mustWrite(t, filepath.Join(plugin, "agents", "a.agent.md"), "agent")
+	// Nested agent files and non-.agent.md files in agents/ are skipped.
+	mustWrite(t, filepath.Join(plugin, "agents", "nested", "deep.agent.md"), "nope")
+	mustWrite(t, filepath.Join(plugin, "agents", "README.md"), "nope")
+
+	plugins, err := Translate(root, KindDotnetSkills, "p", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plugins) != 1 {
+		t.Fatalf("got %+v", plugins)
+	}
+	got := canonicalSet(plugins[0].Files)
+	want := []string{
+		".agents/skills/x/SKILL.md",
+		".github/agents/a.agent.md",
+	}
 	if !equalSorted(got, want) {
 		t.Errorf("files: got %v want %v", got, want)
 	}
@@ -124,6 +155,14 @@ func TestTranslateHeuristic(t *testing.T) {
 	// heuristic groups by top-level dir "lib"
 	if plugins[0].Name != "lib" {
 		t.Errorf("name: %s", plugins[0].Name)
+	}
+	got := canonicalSet(plugins[0].Files)
+	want := []string{
+		".agents/skills/lib/SKILL.md",
+		".github/agents/agent.agent.md",
+	}
+	if !equalSorted(got, want) {
+		t.Errorf("files: got %v want %v", got, want)
 	}
 }
 

@@ -47,6 +47,9 @@ func newVerifyCmd() *cobra.Command {
 			if res.LegacyBlockPresent {
 				fprintln(out, ".github/copilot-instructions.md still contains a v0.4 managed block; run any `gh copilot-curate` mutating command (add/update/remove/init) to migrate")
 			}
+			if res.LegacyLayoutPending {
+				fprintln(out, "lock still references the v0.5 layout under .copilot/plugins/; run any `gh copilot-curate` mutating command (add/update/remove) to migrate to .agents/skills/ + .github/agents/")
+			}
 			return errf("verify failed: %d missing, %d modified, %d unreadable",
 				len(res.MissingFiles), len(res.ModifiedFiles), len(res.UnknownInLock))
 		},

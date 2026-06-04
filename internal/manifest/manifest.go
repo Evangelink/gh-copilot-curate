@@ -7,9 +7,22 @@
 // The split mirrors the npm/cargo/pip pattern: humans curate intent, the tool
 // generates and maintains the lock.
 //
-// Installed plugin content lives at .copilot/plugins/<plugin>/{skills,agents,...},
-// mirroring Copilot CLI's own ~/.copilot/installed-plugins/<source>/<plugin>/
-// convention so contributors recognize the layout.
+// From v0.6+, installed plugin content is written to the canonical
+// project-scope locations that match what `gh skill install --scope=project`
+// and a manual `.agent.md` author would produce:
+//
+//   - skills → .agents/skills/<skill>/SKILL.md (+ scripts/, references/, …)
+//   - agents → .github/agents/<agent>.agent.md
+//
+// The skill path is the agentskills.io canonical project-scope location
+// shared by GitHub Copilot, Cursor, Codex, Gemini CLI, Antigravity, Amp,
+// Cline, OpenCode, and Warp. The agent path is the overwhelmingly common
+// convention used by Copilot CLI custom agents in the wild (≈29k repos
+// vs ≈300 for the alternatives).
+//
+// Versions ≤ v0.5.x staged installs under .copilot/plugins/<plugin>/...
+// (LegacyPluginsDir). v0.6+ mutating commands migrate that layout in place
+// the first time they run; see internal/skills for the migration logic.
 package manifest
 
 import (
@@ -34,9 +47,19 @@ const (
 	// .gitattributes). Namespaced under PackRoot so future Copilot CLI
 	// repo-scoped files at .copilot/ root do not collide with ours.
 	ToolStateDir = ".copilot/curate"
-	// PluginsDir is where installed plugin content lives, mirroring upstream
-	// `plugins/<plugin>/` trees (e.g. dotnet/skills) at .copilot/plugins/.
-	PluginsDir = ".copilot/plugins"
+	// SkillsRoot is the canonical project-scope skills directory. Shared
+	// with `gh skill install --scope=project` and the agentskills.io
+	// ecosystem. Each installed skill lives at
+	// .agents/skills/<skill>/SKILL.md (+ optional scripts/, references/).
+	SkillsRoot = ".agents/skills"
+	// AgentsRoot is the canonical project-scope custom-agent directory for
+	// Copilot CLI .agent.md files. Each installed agent lives at
+	// .github/agents/<name>.agent.md.
+	AgentsRoot = ".github/agents"
+	// LegacyPluginsDir is the v0.4-v0.5 install root (one subtree per
+	// plugin). v0.6+ migrates files out of this tree on first mutating
+	// command; the migration runs automatically.
+	LegacyPluginsDir = ".copilot/plugins"
 	// LegacyPackRoot is the v0.2.x install root. Detected on init/add so we
 	// can emit a clear migration error instead of silently double-installing.
 	LegacyPackRoot = ".agent-pack"
@@ -50,11 +73,11 @@ const (
 	// LockPath is the path (relative to the repo root) of the generated lock.
 	LockPath = ToolStateDir + "/manifest.lock.yml"
 	// PackDir is the legacy alias retained for backward-compat references in
-	// callers that still want the install root. Prefer PluginsDir for plugin
-	// content and ToolStateDir for tool state.
+	// callers that still want the install root. Prefer SkillsRoot /
+	// AgentsRoot for installed content and ToolStateDir for tool state.
 	//
-	// Deprecated: use PluginsDir for installed content, ToolStateDir for
-	// tool state, or PackRoot for the on-disk umbrella.
+	// Deprecated: use SkillsRoot or AgentsRoot for installed content,
+	// ToolStateDir for tool state, or PackRoot for the .copilot/ umbrella.
 	PackDir = PackRoot
 	// ManagedBy is the marker written into the lock file so downstream tools
 	// can detect that the directory is managed by gh-copilot-curate.

@@ -88,6 +88,7 @@ func newAddCmd() *cobra.Command {
 			}
 			if !dryRun {
 				fprintln(cmd.OutOrStdout(), "wrote", manifest.LockPath)
+				printLegacyLayoutMigrationNotice(cmd, res.LegacyLayoutMigrated)
 				printLegacyMigrationNotice(cmd, res.LegacyBlockCleaned, res.LegacyFileDeleted)
 			}
 			return nil

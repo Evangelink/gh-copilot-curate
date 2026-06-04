@@ -39,6 +39,7 @@ func newRemoveCmd() *cobra.Command {
 				fprintln(cmd.OutOrStdout(), prefix, f)
 			}
 			if !dryRun {
+				printLegacyLayoutMigrationNotice(cmd, res.LegacyLayoutMigrated)
 				printLegacyMigrationNotice(cmd, res.LegacyBlockCleaned, res.LegacyFileDeleted)
 			}
 			return nil

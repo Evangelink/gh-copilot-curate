@@ -1,5 +1,12 @@
 // Package layout translates an upstream source tree into the canonical
-// gh-copilot-curate on-disk format under .copilot/plugins/<plugin>/...
+// gh-copilot-curate on-disk format. From v0.6+, that means:
+//
+//   - skills → .agents/skills/<skill>/SKILL.md (+ scripts/, references/, …)
+//   - agents → .github/agents/<agent>.agent.md
+//
+// These are the same locations a user would write to manually (skills match
+// `gh skill install --scope=project`; agents match the dominant convention
+// for Copilot CLI .agent.md files).
 //
 // v1 supports two layouts:
 //
@@ -7,8 +14,8 @@
 //     Detection: presence of a top-level "plugins/" directory containing at
 //     least one subdirectory with a "skills/" or "agents/" child.
 //   - "heuristic": fall back to walking the tree for SKILL.md and *.agent.md
-//     files and grouping by the nearest "plugins/<name>" ancestor, or by
-//     repo name if none exists.
+//     files. Each SKILL.md becomes a skill named after its immediate parent
+//     directory; each *.agent.md becomes an agent named after its basename.
 //
 // Detection order is: explicit override (caller flag) > dotnet-skills >
 // heuristic. v1 does not support agentskills.io's standard manifest yet
@@ -37,8 +44,9 @@ const (
 	KindHeuristic    Kind = "heuristic"
 )
 
-// Plugin is a logical bundle of skills+agents+scripts that gh-copilot-curate installs
-// as a unit under .copilot/plugins/<Name>/.
+// Plugin is a logical bundle of skills+agents that gh-copilot-curate installs
+// as a unit. Each file is written to its canonical project-scope location
+// (under .agents/skills/ or .github/agents/), not under a per-plugin tree.
 type Plugin struct {
 	Name  string  // canonical plugin id (kebab-case)
 	Files []File  // every file to copy
@@ -47,7 +55,7 @@ type Plugin struct {
 // File describes a single file to copy from upstream → canonical path.
 type File struct {
 	UpstreamPath  string      // relative to the extracted repo root
-	CanonicalPath string      // relative to repo root, under .copilot/plugins/<plugin>/
+	CanonicalPath string      // relative to repo root; under .agents/skills/<skill>/ or .github/agents/
 	Mode          os.FileMode // file mode bits
 }
 
@@ -155,7 +163,8 @@ func translateDotnetSkills(root, pluginFilter string, includes []string) ([]Plug
 
 func translateHeuristic(root, pluginFilter string, includes []string) ([]Plugin, error) {
 	// Group files by their nearest "plugins/<name>/" ancestor, or by the
-	// upstream repo's top-level folder name if none.
+	// upstream repo's top-level folder name if none. The group name becomes
+	// the plugin id in the lock; the canonical path is independent of it.
 	groups := map[string][]File{}
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -184,14 +193,14 @@ func translateHeuristic(root, pluginFilter string, includes []string) ([]Plugin,
 		if !matchesIncludes(relInPlugin, includes) {
 			return nil
 		}
-		// Heuristic only includes the SKILL.md / .agent.md itself, not
-		// adjacent scripts. The dotnet-skills path handles full subtrees.
-		canonical := canonicalForHeuristic(plugin, relSlash)
-		mode := fileMode(p, 0o644)
+		canonical, ok := canonicalForHeuristic(name, relSlash)
+		if !ok {
+			return nil
+		}
 		groups[plugin] = append(groups[plugin], File{
 			UpstreamPath:  relSlash,
 			CanonicalPath: canonical,
-			Mode:          mode,
+			Mode:          fileMode(p, 0o644),
 		})
 		return nil
 	})
@@ -207,10 +216,15 @@ func translateHeuristic(root, pluginFilter string, includes []string) ([]Plugin,
 	return out, nil
 }
 
-// collectPluginFiles walks pluginDir and returns matching files. Include
-// patterns are interpreted as PLUGIN-RELATIVE — e.g. "skills/build-perf/**"
-// selects files under <plugin>/skills/build-perf, not "plugins/<plugin>/skills/...".
-// This matches the documented user intent in the README.
+// collectPluginFiles walks pluginDir and returns matching files mapped to
+// canonical project-scope locations. Include patterns are interpreted as
+// PLUGIN-RELATIVE — e.g. "skills/build-perf/**" selects files under
+// <plugin>/skills/build-perf, not "plugins/<plugin>/skills/...".
+//
+// Only files under skills/ and agents/ are installed. Plugin-level
+// metadata (plugin.json, README.md, …) is intentionally skipped: it's
+// build/curation metadata that the canonical project-scope layout does
+// not have a home for, and the agentskills.io standard does not require.
 func collectPluginFiles(root, pluginDir, plugin string, includes []string) ([]File, error) {
 	var files []File
 	err := filepath.WalkDir(pluginDir, func(p string, d fs.DirEntry, err error) error {
@@ -230,7 +244,11 @@ func collectPluginFiles(root, pluginDir, plugin string, includes []string) ([]Fi
 		if !matchesIncludes(relInPluginSlash, includes) {
 			return nil
 		}
-		canonical := path.Join(manifest.PluginsDir, plugin, relInPluginSlash)
+		canonical, ok := canonicalForDotnetSkills(relInPluginSlash)
+		if !ok {
+			// Skip files outside skills/ and agents/ (plugin.json, README, etc.).
+			return nil
+		}
 		files = append(files, File{
 			UpstreamPath:  relSlash,
 			CanonicalPath: canonical,
@@ -243,6 +261,43 @@ func collectPluginFiles(root, pluginDir, plugin string, includes []string) ([]Fi
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].CanonicalPath < files[j].CanonicalPath })
 	return files, nil
+}
+
+// canonicalForDotnetSkills maps a plugin-relative upstream path to its
+// canonical project-scope destination, or returns ok=false if the file
+// should not be installed.
+//
+// Rules (in order):
+//
+//   - skills/<skill>/<rest>      → .agents/skills/<skill>/<rest>
+//     (drops the per-plugin prefix to match `gh skill install --scope=project`)
+//
+//   - agents/<name>.agent.md     → .github/agents/<name>.agent.md
+//     (only direct children of agents/ with .agent.md extension; nested
+//     paths and other extensions are skipped)
+//
+//   - anything else              → skipped
+func canonicalForDotnetSkills(relInPluginSlash string) (string, bool) {
+	parts := strings.SplitN(relInPluginSlash, "/", 2)
+	if len(parts) < 2 {
+		return "", false
+	}
+	switch parts[0] {
+	case "skills":
+		// parts[1] = "<skill>/<rest...>" — keep as-is, drop the plugin prefix.
+		return path.Join(manifest.SkillsRoot, parts[1]), true
+	case "agents":
+		// Only direct children with the .agent.md extension.
+		if strings.Contains(parts[1], "/") {
+			return "", false
+		}
+		if !strings.HasSuffix(parts[1], ".agent.md") {
+			return "", false
+		}
+		return path.Join(manifest.AgentsRoot, parts[1]), true
+	default:
+		return "", false
+	}
 }
 
 func pluginFromPath(relSlash string) string {
@@ -258,13 +313,25 @@ func pluginFromPath(relSlash string) string {
 	return "default"
 }
 
-func canonicalForHeuristic(plugin, relSlash string) string {
-	// Strip everything up to and including "plugins/<plugin>/" if present.
-	prefix := "plugins/" + plugin + "/"
-	if idx := strings.Index(relSlash, prefix); idx >= 0 {
-		return path.Join(manifest.PluginsDir, plugin, relSlash[idx+len(prefix):])
+func canonicalForHeuristic(filename, relSlash string) (string, bool) {
+	// Heuristic only matches SKILL.md and *.agent.md files.
+	if filename == "SKILL.md" {
+		// .agents/skills/<dir>/SKILL.md where <dir> is the immediate parent.
+		dir := path.Dir(relSlash)
+		if dir == "." || dir == "/" {
+			return "", false
+		}
+		skillName := path.Base(dir)
+		if skillName == "" || skillName == "." || skillName == "/" {
+			return "", false
+		}
+		return path.Join(manifest.SkillsRoot, skillName, "SKILL.md"), true
 	}
-	return path.Join(manifest.PluginsDir, plugin, relSlash)
+	if strings.HasSuffix(filename, ".agent.md") {
+		// .github/agents/<basename>.
+		return path.Join(manifest.AgentsRoot, filename), true
+	}
+	return "", false
 }
 
 // matchesIncludes reports whether relSlash is selected by includes. Each

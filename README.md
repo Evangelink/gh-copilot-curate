@@ -10,11 +10,59 @@
 > your repo declares.
 
 > Modeled on [`gh aw`](https://github.com/githubnext/gh-aw)'s lifecycle.
-> Ships precompiled binaries via `gh extension install`. v0.5.0 is a
-> **breaking change** that migrates curate-managed instructions out of
-> the shared `.github/copilot-instructions.md` into a dedicated
-> path-specific file. The migration runs automatically on the next
-> mutating command (no user action required). See migration notes below.
+> Ships precompiled binaries via `gh extension install`. **v0.6.0** is a
+> **breaking change** that moves installed plugin content out of the
+> tool-specific `.copilot/plugins/<plugin>/...` tree and into the
+> canonical paths a user would create by hand (`.agents/skills/<skill>/`
+> for skills, `.github/agents/<name>.agent.md` for agents). This makes
+> installed content auto-discoverable by Copilot CLI, the GitHub.com
+> Copilot cloud agent, the built-in `gh skill`, and IDE chats with **no
+> indirection layer** — they look like files the user created
+> themselves. The migration runs automatically on the next mutating
+> command. See migration notes below.
+
+## v0.6.0 — breaking change: canonical user-equivalent install paths
+
+In v0.4–v0.5, plugin content was staged under
+`.copilot/plugins/<plugin>/...`. That worked but it required every
+agentic surface to know about an extra "managed install" layer to find
+the SKILL.md files. v0.6.0 drops that layer:
+
+| Content | v0.5 path | v0.6 path |
+|---|---|---|
+| Skills | `.copilot/plugins/<plugin>/skills/<skill>/SKILL.md` | `.agents/skills/<skill>/SKILL.md` |
+| Skill scripts/refs | `.copilot/plugins/<plugin>/skills/<skill>/scripts/...` | `.agents/skills/<skill>/scripts/...` |
+| Agents | `.copilot/plugins/<plugin>/agents/<name>.agent.md` | `.github/agents/<name>.agent.md` |
+
+These are the exact paths a user would create by hand and the paths
+`gh skill install --scope=project` writes. Net effect: any surface that
+reads `.agents/skills/` or `.github/agents/` directly (Copilot CLI, the
+cloud agent, IDE chats, `gh skill list`) now picks up curate-installed
+content as if the user had authored it.
+
+**Trade-off — flat project namespace.** Because the canonical paths
+strip the `<plugin>` prefix, two upstream plugins that ship a skill
+with the same directory name cannot coexist in the same repo. The
+preflight collision check refuses the install with a clear error; use
+`--include` to scope to one of them.
+
+**Automatic migration**: the next time you run **any** mutating command
+(`add`, `update`, `remove`), gh-copilot-curate will:
+
+1. Verify each `.copilot/plugins/...` file still hashes to its
+   `LocalHash` in the lock (refuses with a `--force`-able error if any
+   file has been hand-edited — see "drift" below).
+2. `os.Rename` every file into its v0.6 canonical path. Modes and
+   inodes are preserved; only the lock's `Path` field is rewritten.
+3. Drop any plugin-metadata orphans (e.g. `plugin.json`) from both the
+   lock and disk.
+4. Remove the now-empty `.copilot/plugins/` subtree.
+5. Refresh the repo-root `.gitattributes` managed block to cover
+   `.agents/skills/**` and `.github/agents/**` with `text eol=lf`.
+6. Print a one-shot migration notice.
+
+`gh copilot-curate verify` reports the legacy layout as drift
+(`LegacyLayoutPending`) until a mutating command runs.
 
 ## v0.5.0 — breaking change: instructions moved to a path-specific file
 
@@ -78,7 +126,9 @@ instructions). The on-disk tool-state dir moved correspondingly:
 | `.copilot/agent-pack/manifest.lock.yml` | `.copilot/curate/manifest.lock.yml` |
 | `<!-- BEGIN gh-agent-pack managed -->` | `<!-- BEGIN gh-copilot-curate managed -->` |
 
-Plugin content under `.copilot/plugins/<plugin>/` is unchanged.
+Plugin content moves to canonical user-equivalent paths
+(`.agents/skills/<skill>/` and `.github/agents/<name>.agent.md`) in
+v0.6.0 — see the v0.6.0 section above.
 
 **Migrating from v0.3.x**: any mutating command (`init`, `add`, `update`,
 `remove`) detects a legacy `.copilot/agent-pack/` directory and refuses
@@ -114,8 +164,10 @@ delete `.agent-pack/` instead of `.copilot/agent-pack/`.
 | Drift-detect your repo's pack state in CI | **`gh-copilot-curate verify`.** |
 
 `gh-copilot-curate` complements `gh skill` — it does not replace it for
-single-skill installs. The two can coexist in the same repo (different
-on-disk dirs: `.copilot/plugins/` vs `.agents/skills/`).
+single-skill installs. As of v0.6.0 both tools write to the same
+on-disk paths (`.agents/skills/` + `.github/agents/`), so a
+curate-installed bundle and a `gh skill --scope=project` install
+coexist in the same tree.
 
 > ⚠ **`gh skill` is officially in preview.** Every subcommand is
 > labelled `(preview)` and its help text states it is "subject to
@@ -145,10 +197,10 @@ has at least pointers to it.
 > `AGENTS.md` and `.github/instructions/copilot-curate.instructions.md`
 > — the files Copilot's cloud agent reads when working on an issue.
 > Whether the cloud agent then *follows the links* into
-> `.copilot/plugins/...SKILL.md` / `.agent.md` is up to the agent's
-> behavior, not something this tool can guarantee. Use `--mode inline`
-> for skills the agent **must** see in full (it embeds the SKILL.md
-> body directly so no link-following is required).
+> `.agents/skills/...SKILL.md` / `.github/agents/...agent.md` is up to
+> the agent's behavior, not something this tool can guarantee. Use
+> `--mode inline` for skills the agent **must** see in full (it embeds
+> the SKILL.md body directly so no link-following is required).
 
 ## Prerequisites
 
@@ -175,9 +227,9 @@ gh extension upgrade copilot-curate
 ## Quickstart
 
 ```sh
-# 1. Scaffold .copilot/plugins/, .copilot/curate/manifest.yml,
-#    AGENTS.md managed block, and .copilot/.gitattributes
-#    (all non-destructive).
+# 1. Scaffold .copilot/curate/, AGENTS.md managed block, and
+#    .copilot/.gitattributes. (Plugin content lives at canonical
+#    paths under .agents/skills/ + .github/agents/ once you add.)
 gh copilot-curate init
 
 # 2. Install a plugin from a source repo, pinned to a release tag.
@@ -244,15 +296,19 @@ gh copilot-curate add my-org/my-skills@v2 --mode inline --yes
 ```
 .copilot/
   .gitattributes            # `* text eol=lf` — keeps hashes stable across OSes
-                            # (covers both curate/ and plugins/ subtrees)
+                            # for .copilot/curate/ state files
   curate/
     manifest.yml            # intent — hand-editable
     manifest.lock.yml       # generated — do not edit
-  plugins/
-    <plugin>/
-      skills/<skill>/SKILL.md
-      skills/<skill>/scripts/...
-      agents/<agent>.agent.md
+.agents/skills/             # canonical skills root (user-equivalent path)
+  <skill>/SKILL.md          #   <plugin> prefix is intentionally stripped
+  <skill>/scripts/...
+.github/agents/             # canonical agents root (user-equivalent path)
+  <agent>.agent.md
+.gitattributes              # repo-root file gets a managed block adding
+                            # `.agents/skills/** text eol=lf` and
+                            # `.github/agents/** text eol=lf`. User entries
+                            # outside the fence are preserved verbatim.
 AGENTS.md
   # ...your existing content...
   <!-- BEGIN gh-copilot-curate managed -->
@@ -303,7 +359,7 @@ plugins:
       scope: repo
       mode: summary
     files:
-      - path: .copilot/plugins/dotnet-test/skills/run-tests/SKILL.md
+      - path: .agents/skills/run-tests/SKILL.md
         upstreamPath: plugins/dotnet-test/skills/run-tests/SKILL.md
         upstreamHash: sha256:...
         localHash: sha256:...
@@ -331,7 +387,7 @@ The render mode controls **what** lands in both files:
 | `link` | Just a bullet list of links | Minimal noise; only if you trust the agent to follow links. |
 
 If your cloud agent doesn't reliably follow links into
-`.copilot/plugins/...`, prefer `inline` for skills that must always be
+`.agents/skills/...`, prefer `inline` for skills that must always be
 applied.
 
 ## Security model

@@ -24,9 +24,6 @@ func newInitCmd() *cobra.Command {
 			if err := skills.CheckNoLegacyLayout(root); err != nil {
 				return err
 			}
-			if err := os.MkdirAll(filepath.Join(root, manifest.PluginsDir), 0o755); err != nil {
-				return err
-			}
 			if err := os.MkdirAll(filepath.Join(root, manifest.ToolStateDir), 0o755); err != nil {
 				return err
 			}
